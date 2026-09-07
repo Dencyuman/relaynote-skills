@@ -85,6 +85,13 @@ to paste the key into chat, print it, include it in reports, or commit it.
 Keys can be renamed, revealed, and revoked from Settings. Revoked or deleted keys
 require a replacement; enabling API-key support does not recreate deleted keys.
 
+## Background continuation setup
+
+If the user selected Codex or Claude Code, follow [background.md](background.md)
+to install the bundled CLI user service and authorize its own OAuth connection.
+Verify a fresh daemon heartbeat. For other clients explain the wait-only support.
+Do not treat `skills add` alone as installing or enabling a background service.
+
 ## Verify and recover
 
 Once tools are available, call `get_reporting_guide`, then `create_session` with a

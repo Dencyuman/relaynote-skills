@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-09-07
+
+- Bundle a Node.js CLI with its own OAuth login and refresh.
+- Install a user service to monitor reviews without keeping an AI turn active.
+- Start one Codex or Claude Code background conversation from an explicit handoff after a decision.
+- Add job status, cancellation, round checks, and duplicate-launch protection.
+
 ## 1.1.0 — 2026-09-07
 
 - Preserve existing API-key clients alongside the recommended OAuth setup.
