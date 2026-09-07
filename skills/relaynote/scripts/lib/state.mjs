@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-export const VERSION = '1.2.0';
+export const VERSION = '1.2.1';
 export const home = path.resolve(process.env.RELAYNOTE_HOME || path.join(os.homedir(), '.local/share/relaynote'));
 export async function init() { await fs.mkdir(home, { recursive:true, mode:0o700 }); await fs.chmod(home,0o700); await fs.mkdir(path.join(home,'jobs'),{recursive:true,mode:0o700}); }
 export async function read(file) { return JSON.parse(await fs.readFile(file,'utf8')); }

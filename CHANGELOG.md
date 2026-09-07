@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — 2026-09-07
+
+- Recheck authorization and the exact review decision immediately before launching an AI.
+
 ## 1.2.0 — 2026-09-07
 
 - Bundle a Node.js CLI with its own OAuth login and refresh.

@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, respond to feedback on a Relaynote session, or continue work automatically after approval.
 metadata:
-  version: "1.2.0"
+  version: "1.2.1"
   author: DENCYU Inc.
 ---
 
