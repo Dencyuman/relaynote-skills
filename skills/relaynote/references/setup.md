@@ -14,7 +14,7 @@ user's chosen configuration scope. Prefer the client's supported CLI to rewritin
 its configuration. Do not overwrite an existing server with a different URL
 without resolving whether it is the user's intended environment.
 
-Relaynote uses OAuth 2.1 Authorization Code + PKCE. Register the URL without a
+Relaynote recommends OAuth 2.1 Authorization Code + PKCE for new connections. Register the URL without a
 static Authorization header. The MCP client manages access and refresh tokens;
 do not read, print, copy into chat, or commit its token store. Users sign in with
 email or Google in their browser and explicitly allow the client to connect.
@@ -28,7 +28,7 @@ codex mcp add relaynote --url https://relaynote.dencyu.co.jp/mcp
 codex mcp login relaynote --scopes relaynote,offline_access
 ```
 
-If upgrading a static-key configuration, use supported remove/add commands after
+Only when the user requests migrating a static-key configuration to OAuth, use supported remove/add commands after
 confirming the existing entry belongs to Relaynote. Do not echo old header values.
 The current server supports DCR registration. If the client defaults to CIMD-only,
 check whether `codex mcp login --help` provides `--oauth-client-registration dcr`
@@ -48,7 +48,7 @@ claude mcp add --transport http --scope user relaynote https://relaynote.dencyu.
 
 Use `/mcp` to select Relaynote and authenticate. The slash menu may require the
 user's interaction; explain this single step. Do not claim a shell command can
-operate an interactive slash menu. Remove an old static-key entry through the
+operate an interactive slash menu. Only for a requested OAuth migration, remove an old static-key entry through the
 client's supported commands before re-adding, preserving other servers.
 
 ## Cursor
@@ -64,7 +64,7 @@ Inspect the selected scope: `.cursor/mcp.json` for a project, or
 }
 ```
 
-Remove only Relaynote's obsolete Authorization header, preserving unrelated
+For a requested OAuth migration, remove only Relaynote's Authorization header, preserving unrelated
 entries. Open Cursor's MCP settings and use Connect/Authenticate. Guide the user
 if UI control is unavailable. Reload only when the client requires it.
 
@@ -72,8 +72,18 @@ if UI control is unavailable. Reload only when the client requires it.
 
 Use official client instructions for remote HTTP MCP with OAuth and DCR. Hosted
 clients may need a native connection UI and cannot use local configuration files.
-If a client cannot support this server's OAuth flow, say so rather than offering
-an API-key fallback or collecting Google credentials.
+If a client cannot support this server's OAuth flow, use the API-key compatibility option below. Never collect Google credentials.
+
+## API-key compatibility
+
+Existing clients can continue using `Authorization: Bearer <key>` with the same
+MCP endpoint. Preserve a working key configuration unless the user requests a
+migration. For clients without OAuth support, guide the user to Settings → API
+keys to create a key and enter it directly in their client's secure credential
+settings. Prefer environment-variable references if supported. Do not ask them
+to paste the key into chat, print it, include it in reports, or commit it.
+Keys can be renamed, revealed, and revoked from Settings. Revoked or deleted keys
+require a replacement; enabling API-key support does not recreate deleted keys.
 
 ## Verify and recover
 
