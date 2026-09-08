@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "2.0.1"
+  version: "3.0.0"
   author: DENCYU Inc.
 ---
 
@@ -24,18 +24,34 @@ Before your first report in a conversation, call `get_reporting_guide` for the
 current server's tool behavior, limits, forms, tables, and image guidance. Treat
 that tool as the maintained reference; do not assume every server has the same
 optional features. Read [references/review-workflow.md](references/review-workflow.md)
-when composing a review or handling feedback.
+when composing a review or handling feedback. Upload screenshots with
+`scripts/relaynote-feedback.mjs upload FILE --session SESSION_ID` and place the
+printed `asset_id` with `append_blocks`; the CLI shrinks the file and sends the
+bytes directly, so nothing large passes through the conversation.
 
 The default loop is:
 
-1. Create a session for a meaningful unit of work the user wants reviewed.
-2. Share its returned URL so the user can open it, including from a phone.
-3. Wait for feedback using `wait_for_review`, with a timeout within the client's
-   tool-call limit. A timeout means pending, not approval. Continue waiting when
-   the active user request calls for it; stop if the user cancels or redirects you.
-4. For a change request, inspect comments and any attached images or answers,
-   make the authorized changes, and append the follow-up to the **same session**.
-5. Approval closes that review round. Further work follows the user's task scope.
+1. Call `create_session` to create a private, preparing report. Reuse the same session for revisions.
+2. Add all blocks and images, and await every upload. Call `publish_session` with
+   `session_id` and the exact `round` only when the entire report is ready.
+   This enables decisions and sends the review-request notification; it does not make the session public.
+3. Bind the final-decision watcher to THIS conversation, share the URL and finish
+   your response. Comments/forms save without waking the AI. Only final approval
+   or a request for changes triggers the watcher. Use WebSocket Hibernation only.
+4. On notification, read `get_session_review`. Check that its current round and
+   decision ID match the notification. Ignore a superseded event. Call
+   `acknowledge_review(session_id, decision_id, delivery_id)` with the exact IDs
+   in the notification, then continue the authorized work in this conversation.
+   Never infer AI receipt from a successful CLI send.
+5. For revisions call `begin_revision(session_id, round)` with the round being
+   replaced, append the fixes and screenshots, await all uploads, then
+   `publish_session(session_id, round)` with the new round. Retries must reuse the
+   same expected round, not repeatedly increment it. Published content is immutable.
+6. Approval closes the review. Do not reopen it just to say thanks.
+
+Protocol 3 requires updated MCP tools and watcher together. If publication or
+receipt tools are absent, reload MCP preserving this conversation. Do not fall
+back to old comment-triggered monitoring or describe the setup as complete.
 
 Reviewing, approving, or commenting does not itself authorize unrelated actions
 such as deployment, emailing others, or committing all workspace changes.

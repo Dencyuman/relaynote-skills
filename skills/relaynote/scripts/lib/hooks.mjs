@@ -17,7 +17,7 @@ export async function runHook(host,entry) {
   let binding;try{binding=await read(bindingFile(host,thread))}catch(error){if(error.code==='ENOENT')return;throw error;}
   if(binding.host!==host||binding.thread!==thread)throw new Error('Hook origin mismatch');
   // The native hook owns this child. It waits for a WS event, never for an LLM poll.
-  const child=spawn(process.execPath,[entry,'watch',binding.sessionId,'--events','feedback','--consumer',`${host}:${thread}`],{stdio:['ignore','pipe','inherit']});
+  const child=spawn(process.execPath,[entry,'watch',binding.sessionId,'--events','decisions','--consumer',`${host}:${thread}`],{stdio:['ignore','pipe','inherit']});
   const stop=()=>child.kill('SIGTERM');process.once('SIGTERM',stop);process.once('SIGINT',stop);
   let buffer='',eventToDeliver;
   child.stdout.on('data',chunk=>{

@@ -5,24 +5,26 @@ const run=(dir,args,input='')=>new Promise(resolve=>{const p=spawn(process.execP
 const frame=value=>{const data=Buffer.from(JSON.stringify(value));return Buffer.concat([Buffer.from([0x81,data.length]),data]);};
 
 test('CLI receives a WebSocket notification without polling or starting an agent',async()=>{
- const dir=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-feedback-test-'));let changed=false,snapshots=0,mcp=0;const sockets=new Set();
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-feedback-test-'));let changed=false,decided=false,snapshots=0,mcp=0;const sockets=new Set();
  const server=http.createServer((req,res)=>{
   assert.equal(req.headers.authorization,'Bearer test-key');res.setHeader('Content-Type','application/json');
   if(req.url.endsWith('/events-ticket'))return res.end(JSON.stringify({ticket:'test-ticket'}));
-  if(req.url.endsWith('/snapshot')){snapshots++;return res.end(JSON.stringify({session_id:sessionId,current_round:1,latest_review:null,open_comments:changed?[{id:'c1',body:'please fix'}]:[],updated_at:changed?'t1':'t0'}));}
+  if(req.url.endsWith('/snapshot')){snapshots++;return res.end(JSON.stringify({session_id:sessionId,current_round:1,delivery_protocol:3,latest_review:decided?{id:'22222222-2222-4222-8222-222222222222',round:1,decision:'approved'}:null,open_comments:changed?[{id:'c1',body:'please fix'}]:[],updated_at:changed?'t1':'t0'}));}
+  if(req.url.endsWith('/delivery')){let body='';req.on('data',b=>body+=b);req.on('end',()=>{const data=JSON.parse(body);res.end(JSON.stringify(data.action==='claim'?{status:'waiting',delivery_id:'33333333-3333-4333-8333-333333333333'}:{ok:true}))});return;}
   mcp++;res.writeHead(404);res.end('{}');
  });
  server.on('upgrade',(req,socket)=>{
   sockets.add(socket);socket.on('data',data=>{if((data[0]&15)===8)socket.end(Buffer.from([0x88,0]));});const key=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${key}\r\nSec-WebSocket-Protocol: relaynote\r\n\r\n`);
   socket.write(frame({type:'ready'}));
-  setTimeout(()=>{changed=true;socket.write(frame({type:'changed'}));},200);
+  setTimeout(()=>{changed=true;socket.write(frame({type:'changed'}));},150);
+  setTimeout(()=>{decided=true;socket.write(frame({type:'changed'}));},400);
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  try{
   assert.equal((await run(dir,['login','--server',`http://127.0.0.1:${server.address().port}`,'--api-key-stdin'],'test-key')).code,0);
   const result=await run(dir,['watch',sessionId,'--consumer','unit-origin','--events','feedback']);
-  assert.equal(result.code,0,result.err);assert.equal(JSON.parse(result.out).feedback.comments[0].body,'please fix');assert.equal(mcp,0);assert.equal(snapshots,3);
+  assert.equal(result.code,0,result.err);assert.equal(JSON.parse(result.out).feedback.comments[0].body,'please fix');assert.equal(mcp,0);assert.equal(JSON.parse(result.out).decision_id,'22222222-2222-4222-8222-222222222222');assert(snapshots>=5 && snapshots<=6);
  }finally{for(const socket of sockets)socket.destroy();await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
 });
 

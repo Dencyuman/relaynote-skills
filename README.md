@@ -48,3 +48,15 @@ harness and uses its supported delivery path; an embedded app or editor is not
 automatically covered by testing its standalone CLI.
 
 Validation: `node --test test/*.test.mjs`.
+
+## Final-decision protocol (3.0)
+
+Create a draft, upload everything, then call `publish_session`. Comments and form
+edits save without waking an AI. Final approval or a request for changes triggers
+the watcher, bound to exactly one originating conversation. Relaynote shows the
+transport result and a separate AI receipt (`acknowledge_review`). A follow-up
+starts with `begin_revision` and is explicitly published after uploads complete.
+
+Upgrade the server and skill together. Old servers are rejected by the 3.0 CLI;
+there is no polling fallback. `npx skills update` updates installed skills from
+their source. Use the repository's release tag when a fixed version is needed.

@@ -31,10 +31,12 @@ create an API key for this flow.
    as described in feedback.md. Use `login --device --server ORIGIN` when the user is on a phone or the computer is remote. Explain why a second browser authorization appears:
    the AI client and the watcher each have their own access grant. Both must use the
    SAME Relaynote account as the onboarding page. Never copy the AI client's tokens.
-4. Create a short test review through MCP. Configure a supported watcher for the
-   current conversation, then finish the response and let the user comment.
+4. Create a short test review through MCP, finish all uploads, and call
+   `publish_session(session_id, round)`. Configure a supported watcher for the
+   current conversation, then finish the response and let the user submit final approval or request changes.
 5. Only report automatic feedback as ready once this same conversation wakes and
-   reads that feedback. A successful OAuth login or a running PID is not completion.
+   verifies the decision ID/round and calls `acknowledge_review` with the exact
+   notification IDs. A successful OAuth login or a running PID is not completion.
 
 `CLI` is the absolute path to scripts/relaynote-feedback.mjs beside this skill.
 Check Node.js is 22+ before running it. Keep login running while the user approves
@@ -147,15 +149,17 @@ require a replacement; enabling API-key support does not recreate deleted keys.
 ## Verify and recover
 
 Once tools are available, call `get_reporting_guide`, then `create_session` with a
-short, clearly labeled connection review. Share the returned session URL. Invite
+short, clearly labeled connection review. Finish uploads and call `publish_session`
+with the returned round, then share the session URL. Invite
 the user to approve or request a change, and read the result with
-`wait_for_review` / `get_session_review`. Report configuration, authenticated tool
+`get_session_review`, then `acknowledge_review` using the notification IDs. Report configuration, authenticated tool
 access, and the review round trip separately; do not mark all three complete
 merely because a file was written.
 
 - 401: authenticate again; the grant may have expired or been disconnected.
 - 403 insufficient_scope: reauthorize with `relaynote` (and `offline_access` for
-  refresh tokens).
+  refresh tokens). For the CLI `upload` command, run the watcher login again so
+  the grant includes `relaynote:upload`; the read-only events grant cannot upload.
 - Missing tools after configuration: reload/restart the client, then retry.
 - Browser denial: explain that access was not granted; do not retry indefinitely.
 - Google account already belongs to another Relaynote account: do not merge data

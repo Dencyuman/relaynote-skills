@@ -1,3 +1,11 @@
+# 3.0.0
+
+- Add `upload FILE --session SESSION_ID`: shrinks the image (1600px, WebP q76, via sharp / ImageMagick / cwebp / sips) and sends the bytes straight to `POST /api/sessions/:id/assets`; the printed `asset_id` goes into `append_blocks` as an `image` block, so screenshots never pass through the model. Logins now request the upload-only `relaynote:upload` scope next to the read-only events scope; a read-only grant cannot upload.
+- Explicit preparing/publish lifecycle and immutable review rounds.
+- Final decisions only; comments and uploads no longer wake an agent.
+- Server-bound conversation identity, stale-decision checks before send, delivery receipts and AI acknowledgement.
+- Requires Relaynote delivery protocol 3; no polling or replacement agent fallback.
+
 # Changelog
 
 ## 2.0.1 — 2026-09-09

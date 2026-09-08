@@ -9,6 +9,8 @@ export class AuthError extends Error {}
 async function post(url,body,form=false){const r=await fetch(url,{method:'POST',headers:{'Content-Type':form?'application/x-www-form-urlencoded':'application/json'},body:form?new URLSearchParams(body):JSON.stringify(body),signal:AbortSignal.timeout(20000),redirect:'error'});if(r.status>=500||r.status===429)throw new Error('Authentication service temporarily unavailable');if(!r.ok)throw new AuthError(`Authentication failed (${r.status}); run login again`);return r.json()}
 function sameOrigin(url,base){if(new URL(url).origin!==base)throw new Error('Unexpected OAuth endpoint');return url;}
 let refreshing;
+// Read-only events plus the upload-only scope: the watcher can store report images but never write anything else.
+const watcherScope=meta=>{const supported=name=>meta.scopes_supported?.includes(name);return [supported('relaynote:events')?'relaynote:events':'relaynote',...(supported('relaynote:upload')?['relaynote:upload']:[]),'offline_access'].join(' ')};
 export async function credentials(){return read(file).catch(()=>{throw new AuthError('Run relaynote login first')})}
 export async function accessToken(){const a=await credentials();if(a.apiKey)return{base:a.base,token:a.apiKey};if(a.expiresAt>Date.now()+60000)return{base:a.base,token:a.accessToken};
  refreshing??=(async()=>{if(!a.refreshToken)throw new AuthError('Run login again');const t=await post(sameOrigin(a.tokenEndpoint,a.base),{grant_type:'refresh_token',client_id:a.clientId,refresh_token:a.refreshToken,resource:a.base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');await write(file,{...a,accessToken:t.access_token,refreshToken:t.refresh_token??a.refreshToken,expiresAt:Date.now()+t.expires_in*1000});return{base:a.base,token:t.access_token}})().finally(()=>{refreshing=undefined});return refreshing;
@@ -25,11 +27,11 @@ export async function login(base,{open=true,onUrl}={}){
  const timeout=setTimeout(()=>rejectCode(new AuthError('Login timed out')),180000);code.catch(()=>{});
  try{
   const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']});
-  const url=new URL(meta.authorization_endpoint);url.search=new URLSearchParams({client_id:client.client_id,redirect_uri:redirect,response_type:'code',scope:meta.scopes_supported?.includes('relaynote:events')?'relaynote:events offline_access':'relaynote offline_access',resource:base+'/mcp',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
+  const url=new URL(meta.authorization_endpoint);url.search=new URLSearchParams({client_id:client.client_id,redirect_uri:redirect,response_type:'code',scope:watcherScope(meta),resource:base+'/mcp',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
   if(onUrl)await onUrl(url.href);else console.log(`Authorize Relaynote in your browser:\n${url.href}`);
   if(open){const command=process.platform==='darwin'?'open':process.platform==='win32'?null:'xdg-open';if(command){const p=spawn(command,[url.href],{stdio:'ignore'});p.on('error',()=>{});p.unref()}}
   const t=await post(meta.token_endpoint,{grant_type:'authorization_code',client_id:client.client_id,redirect_uri:redirect,code:await code,code_verifier:verifier,resource:base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');
-  await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000});
+  await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope});
  }finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
 
@@ -39,7 +41,7 @@ export async function deviceLogin(base,{onUrl}={}) {
  if(!response.ok)throw new AuthError('OAuth discovery failed');
  const meta=await response.json();
  for(const k of ['device_authorization_endpoint','token_endpoint','registration_endpoint'])sameOrigin(meta[k],base);
- const scope='relaynote:events offline_access';
+ const scope=watcherScope(meta);
  const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[base+'/oauth/device'],token_endpoint_auth_method:'none',grant_types:['urn:ietf:params:oauth:grant-type:device_code','refresh_token'],response_types:[],scope});
  const device=await post(meta.device_authorization_endpoint,{client_id:client.client_id,scope,resource:base+'/mcp'},true);
  sameOrigin(device.verification_uri_complete,base);

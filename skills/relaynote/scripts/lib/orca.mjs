@@ -29,7 +29,7 @@ export async function captureOrca(){
   if(!/(^|\/)codex$/.test(p.command))throw new Error('Originating Codex process not found');
   return {...origin,agent:p};
 }
-export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal}={}){
+export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal,beforeSend=async()=>true}={}){
   const verify=async()=>{
     const p=await identity(origin.agent.pid);
     if(p.started!==origin.agent.started||p.command!==origin.agent.command)throw new Error('Originating Codex process changed');
@@ -42,9 +42,11 @@ export async function sendOrca(origin,event,{command=run,identity=processIdentit
     await verify();
     await command(origin.command,['terminal','read','--terminal',origin.handle,'--limit','1','--json']);
     if(signal?.aborted)return;
-    const message=`[Relaynote CLI automatic notification] Event ${event.event_id}; session ${event.session_id}; originating thread ${origin.thread}. ${event.instruction}`;
+    if(!await beforeSend())return false;
+    const message=`[Relaynote CLI automatic notification] Event ${event.event_id}; server ${event.server_url}; session ${event.session_id}; round ${event.round}; originating thread ${origin.thread}; decision_id ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
     const result=await command(origin.command,['terminal','send','--terminal',origin.handle,'--text',message,'--enter','--json'],30000);
     if(!result.ok)throw new Error('Orca delivery outcome unknown; inspect the original conversation before retrying');
-    return;
+    return true;
   }
+  return false;
 }

@@ -4,7 +4,7 @@ test('idle wait deadlines never fetch data; only ready or changed events do',asy
  const dir=await fs.mkdtemp('/tmp/rn-events-');process.env.RELAYNOTE_HOME=dir;
  await fs.writeFile(dir+'/auth.json',JSON.stringify({base:'http://localhost:12345',apiKey:'unit-only'}));
  const originalFetch=globalThis.fetch,originalSocket=globalThis.WebSocket;let reads=0,ws;
- globalThis.fetch=async url=>{if(String(url).endsWith('/snapshot')){reads++;return Response.json({updated_at:'t'+reads,current_round:1})}return Response.json({ticket:'test'})};
+ globalThis.fetch=async url=>{if(String(url).endsWith('/snapshot')){reads++;return Response.json({session_id:'session',updated_at:'t'+reads,current_round:1})}return Response.json({ticket:'test'})};
  globalThis.WebSocket=class{static OPEN=1;readyState=1;constructor(){ws=this;queueMicrotask(()=>this.onmessage({data:'{"type":"ready"}'}));}send(){}close(){this.onclose?.({code:1000})}};
  const {eventSource}=await import('../skills/relaynote/scripts/lib/events.mjs');const source=eventSource('session');
  try{

@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import http from 'node:http';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+const runCli=(args,env)=>new Promise(resolve=>{const child=spawn(process.execPath,[cli,...args],{env,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.once('exit',status=>resolve({status,stdout,stderr}))});
+import {fileURLToPath} from 'node:url';
+import {contentType,dimensions,prepareImage,converters} from '../skills/relaynote/scripts/lib/upload.mjs';
+const cli=fileURLToPath(new URL('../skills/relaynote/scripts/relaynote-feedback.mjs',import.meta.url));
+// 1x1 PNG, JPEG and WebP fixtures (headers are all the parser reads).
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','base64');
+const jpeg=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xe0,0x00,0x10]),Buffer.from('JFIF\0'),Buffer.alloc(9),Buffer.from([0xff,0xc0,0x00,0x11,0x08,0x02,0x00,0x03,0x20,0x03]),Buffer.alloc(20),Buffer.from([0xff,0xd9])]);
+const webp=Buffer.concat([Buffer.from('RIFF'),Buffer.from([0,0,0,0]),Buffer.from('WEBPVP8X'),Buffer.from([10,0,0,0]),Buffer.alloc(4),Buffer.from([0x3f,0x06,0x00]),Buffer.from([0x18,0x03,0x00])]);
+test('image types and pixel sizes are read from headers',()=>{
+ assert.equal(contentType(png),'image/png');assert.deepEqual(dimensions(png),{width:1,height:1});
+ assert.equal(contentType(jpeg),'image/jpeg');assert.deepEqual(dimensions(jpeg),{width:800,height:512});
+ assert.equal(contentType(webp),'image/webp');assert.deepEqual(dimensions(webp),{width:1600,height:793});
+ assert.equal(contentType(Buffer.from('not an image')),null);
+});
+test('small images pass through untouched; oversized ones go through the first working converter',async()=>{
+ const dir=await fs.mkdtemp('/tmp/rn-upload-');
+ const small=path.join(dir,'small.jpg');await fs.writeFile(small,jpeg);
+ const kept=await prepareImage(small,{tools:[['boom',()=>{throw new Error('must not run')}]]});
+ assert.equal(kept.converter,null);assert.equal(kept.filename,'small.jpg');
+ const big=path.join(dir,'shot.jpg');await fs.writeFile(big,Buffer.concat([jpeg.subarray(0,jpeg.length-2),Buffer.alloc(400_000),jpeg.subarray(-2)]));
+ const shrunk=await prepareImage(big,{tools:[['broken',()=>{throw new Error('no binary')}],['fake',async(input,{maxSide,quality})=>{assert.equal(maxSide,1600);assert.equal(quality,76);return {buffer:webp,extension:'webp'}}]]});
+ assert.equal(shrunk.converter,'fake');assert.equal(shrunk.filename,'shot.webp');assert.equal(shrunk.contentType,'image/webp');assert.equal(shrunk.width,1600);
+ const raw=await prepareImage(big,{keep:true,tools:[['boom',()=>{throw new Error('must not run')}]]});
+ assert.equal(raw.converter,null);assert.equal(raw.buffer.length,400_000+jpeg.length);
+ assert.deepEqual(converters({sharp:null,available:()=>false}),[]);
+ assert.equal(converters({sharp:null,available:name=>name==='cwebp'})[0][0],'cwebp');
+});
+test('upload sends the bytes straight to the server and prints the asset id',async()=>{
+ const dir=await fs.mkdtemp('/tmp/rn-upload-cli-');
+ const received=[];
+ const server=http.createServer((req,res)=>{const chunks=[];req.on('data',c=>chunks.push(c));req.on('end',()=>{received.push({url:req.url,headers:req.headers,body:Buffer.concat(chunks)});res.setHeader('Content-Type','application/json');res.end(JSON.stringify({asset_id:'asset-1',content_type:req.headers['content-type']}))})});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base=`http://127.0.0.1:${server.address().port}`;
+ await fs.writeFile(path.join(dir,'auth.json'),JSON.stringify({base,apiKey:'secret-key'}));
+ const file=path.join(dir,'proof.png');await fs.writeFile(file,png);
+ const session='8a8d08c2-cdd2-404a-a12c-08968f3ad8ce';
+ const r=await runCli(['upload',file,'--session',session,'--keep'],{...process.env,RELAYNOTE_HOME:dir});
+ server.close();
+ assert.equal(r.status,0,r.stderr);
+ const out=JSON.parse(r.stdout);
+ assert.equal(out.asset_id,'asset-1');assert.equal(out.filename,'proof.png');assert.equal(out.bytes,png.length);assert.match(out.next,/append_blocks/);
+ assert.equal(received.length,1);
+ assert.equal(received[0].url,`/api/sessions/${session}/assets`);
+ assert.equal(received[0].headers.authorization,'Bearer secret-key');
+ assert.equal(received[0].headers['content-type'],'image/png');
+ assert.equal(received[0].headers['x-relaynote-filename'],'proof.png');
+ assert.ok(received[0].body.equals(png));
+ const bad=await runCli(['upload',file,'--keep'],{...process.env,RELAYNOTE_HOME:dir});
+ assert.equal(bad.status,1);assert.match(bad.stderr,/--session/);
+});
+test('a read-only login is told to re-authorize with the upload scope',async()=>{
+ const dir=await fs.mkdtemp('/tmp/rn-upload-scope-');
+ const server=http.createServer((req,res)=>{res.statusCode=403;res.end(JSON.stringify({error:'INSUFFICIENT_SCOPE'}))});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ await fs.writeFile(path.join(dir,'auth.json'),JSON.stringify({base:`http://127.0.0.1:${server.address().port}`,apiKey:'read-only'}));
+ const file=path.join(dir,'proof.png');await fs.writeFile(file,png);
+ const r=await runCli(['upload',file,'--session','8a8d08c2-cdd2-404a-a12c-08968f3ad8ce','--keep'],{...process.env,RELAYNOTE_HOME:dir});
+ server.close();
+ assert.equal(r.status,1);assert.match(r.stderr,/relaynote:upload/);
+});

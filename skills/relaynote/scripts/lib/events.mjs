@@ -16,7 +16,7 @@ async function request(sessionId, path, method = 'GET', signal) {
 /** A single connection, coalesced notifications, and D1 snapshots after each wake. */
 export function eventSource(sessionId, {signal, onMode = () => {}} = {}) {
   let socket, opening, timer, beat, wake, dirty = false, failures = 0, retryAt = 0, fatal;
-  const snapshot = async () => (await request(sessionId, 'snapshot', 'GET', signal)).data;
+  const snapshot = async () => {const data=(await request(sessionId, 'snapshot', 'GET', signal)).data;if(data.session_id!==sessionId)throw new AuthError('Session snapshot mismatch; delivery stopped');return data;};
   const notify = () => { dirty = true; wake?.(); };
   const close = () => { clearInterval(beat); clearTimeout(timer); if (socket) { socket.onclose = null; socket.close(); socket = undefined; } wake?.(); };
   const connect = async () => {

@@ -1,10 +1,25 @@
 # Receive feedback in the originating conversation
 
-Read this when the user wants to continue the SAME conversation after leaving a
-Relaynote review. The bridge only observes feedback and delivers an event. It
+Read this when the user wants to continue the SAME conversation after submitting a final
+Relaynote decision. The bridge only observes feedback and delivers an event. It
 never runs `codex exec`, `claude -p`, a resume command, or a replacement agent.
 
-New host recipes and their conditions are in [agents.md](agents.md). Monitoring requires a WebSocket Hibernation server (v2 protocol); older servers are rejected.
+New host recipes and their conditions are in [agents.md](agents.md). Monitoring requires a WebSocket Hibernation server (v3 delivery protocol); older servers are rejected.
+
+## Protocol 3 live verification, 2026-09-09
+
+Codex in Orca 1.4.158, local Relaynote using real MCP and WebSocket Hibernation:
+- A final decision was submitted while the originating conversation was busy.
+- The CLI retained the decision until that same pinned conversation became idle;
+  no other conversation or agent process was started.
+- The notification resumed the originating conversation. The AI read the exact
+  decision and called `acknowledge_review` with its delivery ID; the server stored
+  `received`. Transport acceptance and AI receipt had separate timestamps.
+- Separate browser/CLI integration verified that comments stay silent, final
+  decisions deliver once, foreign conversation bindings are rejected, and receipt
+  updates do not trigger a second event. Desktop and mobile status displays checked.
+- Other adapters retain their earlier host evidence below; protocol 3 has not
+  been independently exercised in every host. Do not claim those hosts were retested.
 
 ## Historical host evidence, 2026-09-08
 
@@ -44,7 +59,7 @@ key through stdin with `login --api-key-stdin`, never a command argument or chat
    restarting that watcher. Do not detach the process with `nohup` or `&`.
 
 ```sh
-node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events feedback --continuous
+node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions --continuous
 ```
 
 3. Share the review URL and finish the response. The monitor remains active;
@@ -67,7 +82,7 @@ an arbitrary transcript. For an embedded client, establish which app-server
 owns that thread before enabling this path.
 
 ```sh
-node "$CLI" start SESSION_UUID --delivery codex --thread ORIGIN_THREAD_UUID --events feedback --continuous
+node "$CLI" start SESSION_UUID --delivery codex --thread ORIGIN_THREAD_UUID --events decisions --continuous
 node "$CLI" status
 ```
 
@@ -93,7 +108,7 @@ proof the model finished its work; check the original conversation.
 When this conversation exposes `ORCA_TERMINAL_HANDLE`, use the host adapter:
 
 ```sh
-node "$CLI" start SESSION_UUID --delivery orca --events feedback --continuous
+node "$CLI" start SESSION_UUID --delivery orca --events decisions --continuous
 ```
 
 The detached Node watcher uses Orca's public `terminal wait` and `terminal send`
@@ -115,7 +130,7 @@ Codex background-task completion callback. Label new host/version recipes as doc
 Use the parent conversation's native background Shell feature to run:
 
 ```sh
-node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events feedback
+node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions
 ```
 
 The command stays alive without AI inference until feedback changes, prints
@@ -130,26 +145,37 @@ UI is a separate surface: verify its delayed task-completion behavior before
 enabling automatic reception there. Use the main conversation's Shell tool,
 not a subagent or a detached shell command.
 
-## Event scope and limits
+## Final decisions and delivery receipts
 
-- Default `--events decisions`: approvals and change requests.
-- `--events feedback`: also detects changes to open comments, submitted form
-  values and edited tables exposed by `get_session_review`.
-- A WebSocket subscription receives bodyless change notifications. The watcher
-  reads the latest snapshot on ready/reconnect and after a change; idle deadlines
-  do not query the server. A broken socket reconnects with backoff, never polling.
-- The server must use Durable Objects WebSocket Hibernation. Ping/pong is handled
-  by the automatic responder and does not wake the model or retain the DO in memory.
-- `status` reports `websocket` or `reconnecting`. Multiple rapid edits can be coalesced.
-- Network failures back off exponentially from 3 to 60 seconds and reset after a
-  successful call; the retry is recorded in `status` without waking the model.
-- Empty new AI report rounds do not trigger the model. Existing feedback can be
-  delivered immediately when first subscribing. Keep the same consumer ID for
-  restarts to retain the saved cursor.
-- Authentication denial stops the watcher. Network failures are retried.
-- Stdout delivery records writing to the harness pipe, not an acknowledgement
-  from the model. Exactly-once processing across crashes is not guaranteed.
-- Feedback does not authorize unrelated commits, deployment, or data disclosure.
+- Comments, edits, forms, table saves and report uploads never trigger the agent.
+  The reviewer must submit final approval or request changes. `--events decisions`
+  is the only behavior; the legacy `--events feedback` argument is normalized to decisions.
+- Publish only after all content is uploaded: `publish_session(session_id, round)`.
+  For follow-ups use `begin_revision(session_id, round)` before adding content.
+- The watcher binds one review to one opaque conversation identity on the server.
+  A different conversation is rejected, even when it shares the account or folder.
+  `--replace-binding` is only for an explicitly requested move to THIS conversation;
+  never use it to work around an unexplained conflict. Existing delivery attempts
+  are not replayed into the replacement destination.
+- Delivery is claimed by final decision ID. Orca waits for the pinned terminal to
+  become idle, then checks the current round/decision and server binding before send.
+  Queue-capable hosts enqueue to the exact original thread. None starts an agent.
+- Relaynote displays pending, waiting, sending, sent, received and failure states.
+  Writing to stdout or a hook/queue is transport acceptance only. The AI must call
+  `acknowledge_review(session_id, decision_id, delivery_id)` from the notification
+  after verifying `get_session_review`. Only that receipt means the original AI
+  has started responding. A status is last confirmed evidence, not a heartbeat.
+- A crash or ambiguous send is not automatically replayed. Check the original
+  conversation before attempting recovery. A later valid AI receipt can confirm
+  a send that the CLI could not confirm. New decisions have separate delivery IDs.
+- The server is notified when a watcher connects or stops. Abrupt machine loss
+  may leave the last known status: the timestamp is shown, not a fabricated live state.
+- Subscriptions use WebSocket Hibernation only. They read snapshots on connection
+  and pushed change, plus one validation at the actual send point. No idle polling.
+  Auto-response ping/pong does not wake the Durable Object. Reconnects use backoff.
+- A native one-shot background task must be rearmed for the next review using the
+  same consumer. Continuous monitors stay active across published rounds.
+- A stopped/closed destination is never replaced by another terminal or process.
 
 ## Sources
 
