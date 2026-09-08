@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.2 — 2026-09-08
+
+- Guide new users through separate OAuth grants for MCP and the feedback watcher.
+- Add an explicit restart handoff with a resumption prompt and current-conversation rebinding.
+- Require an actual automatic feedback round trip before claiming setup complete.
+- Verify the real browser consent flow, refresh, persisted OAuth credentials in a new CLI process, and comment receipt against the local Relaynote server without an API key.
+
 ## 1.3.1 — 2026-09-08
 
 - Fix same-conversation wake-up for Codex inside Orca using its public terminal input API.

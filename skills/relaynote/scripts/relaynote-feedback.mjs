@@ -70,6 +70,6 @@ try{
       const state=await read(path.join(home,'watch-'+id+'.json'));const pid=Number(await fs.readFile(path.join(home,'lock-'+id),'utf8').catch(()=>0));
       if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!command.includes(entry))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');}console.log('Stop requested');break;
     }
-    default:console.log('Relaynote feedback bridge 1.3.1\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions|feedback] [--continuous] [--consumer CONVERSATION_ID]\nstart SESSION --delivery orca [--events feedback] [--continuous]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events feedback] [--continuous]\nstatus | stop WATCHER_ID');
+    default:console.log('Relaynote feedback bridge 1.3.2\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions|feedback] [--continuous] [--consumer CONVERSATION_ID]\nstart SESSION --delivery orca [--events feedback] [--continuous]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events feedback] [--continuous]\nstatus | stop WATCHER_ID');
   }
 }catch(e){console.error(e.message);process.exitCode=1}

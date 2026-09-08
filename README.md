@@ -13,7 +13,7 @@ A Relaynote account and a remote MCP client are required. OAuth is recommended; 
 
 ## Releases
 
-`main` contains the current stable skill. Releases use semantic Git tags (`v1.3.1`)
+`main` contains the current stable skill. Releases use semantic Git tags (`v1.3.2`)
 and GitHub Releases. `skills/relaynote/SKILL.md` records the matching version.
 
 - Patch: corrections that preserve the workflow.
@@ -22,7 +22,7 @@ and GitHub Releases. `skills/relaynote/SKILL.md` records the matching version.
 
 To update installed skills, use `npx skills update`. To refresh only Relaynote,
 run its install command again. A fixed release can be installed from
-`https://github.com/dencyuinc/relaynote-skills/tree/v1.3.1` instead of the shorthand.
+`https://github.com/dencyuinc/relaynote-skills/tree/v1.3.2` instead of the shorthand.
 
 Version 1.x targets Relaynote's OAuth MCP and the reporting guide tool. The server's
 `get_reporting_guide` is the authoritative reference for tool schemas and limits.

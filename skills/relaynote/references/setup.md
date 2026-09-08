@@ -19,6 +19,65 @@ static Authorization header. The MCP client manages access and refresh tokens;
 do not read, print, copy into chat, or commit its token store. Users sign in with
 email or Google in their browser and explicitly allow the client to connect.
 
+## Walk the user through setup
+
+Explain these stages before starting. New users use OAuth; do not ask them to
+create an API key for this flow.
+
+1. Configure the MCP server and let the user authorize the AI client in the browser.
+2. Verify the MCP tools are available in this conversation. If a reload/restart is
+   required, follow the restart handoff below; do not start the watcher yet.
+3. Authenticate the bundled watcher separately with `node "$CLI" login --server ORIGIN`
+   as described in feedback.md. Explain why a second browser authorization appears:
+   the AI client and the watcher each have their own access grant. Both must use the
+   SAME Relaynote account as the onboarding page. Never copy the AI client's tokens.
+4. Create a short test review through MCP. Configure a supported watcher for the
+   current conversation, then finish the response and let the user comment.
+5. Only report automatic feedback as ready once this same conversation wakes and
+   reads that feedback. A successful OAuth login or a running PID is not completion.
+
+`CLI` is the absolute path to scripts/relaynote-feedback.mjs beside this skill.
+Check Node.js is 22+ before running it. Keep login running while the user approves
+in the browser. Login expires after 3 minutes; offer to restart login if needed.
+The ongoing feedback watcher has no overall timeout.
+
+## Restart handoff
+
+After adding/authenticating MCP, try tool discovery in this conversation. Restart
+only when tools remain unavailable. Before asking the user to restart:
+
+- Say what finished (configuration, browser authorization) and what remains.
+- Give the exact restart/reload procedure for the actual client/version. Check its
+  supported commands first. Never terminate the conversation yourself.
+- Provide the resumption message below, including the real MCP URL. The onboarding
+  page also provides this message if the user loses the chat.
+- Do not claim that tools are loaded merely because configuration was saved.
+
+For Codex CLI, retain the exact current `CODEX_THREAD_ID`. If installed
+`codex resume --help` supports it, tell the user to exit the CLI and run
+`codex resume EXACT_THREAD_ID` in the same project. For an embedded client, use its
+own reload/reopen UI; do not start a second standalone Codex as a substitute.
+For Claude Code, use `/mcp` to authenticate/reconnect first; if a full restart is
+needed, use its supported conversation resume mechanism after checking help.
+For Cursor, try the MCP settings reconnect/reload action first and retain the
+current conversation when restarting. Do not invent one universal restart command.
+
+Resumption message (write in the user's language):
+
+> Resume Relaynote setup using the Relaynote skill. The MCP URL is ORIGIN/mcp.
+> Read references/setup.md and references/feedback.md. Inspect the existing MCP
+> configuration and try get_reporting_guide; do not re-add a working server.
+> Authenticate the watcher itself with OAuth and bind feedback to THIS current
+> conversation. Create a test review and verify that my feedback after your final
+> response automatically continues this same conversation.
+
+After resuming, re-detect the host and the current conversation ID. Check any
+existing watcher with `status`; stop only a watcher that you can identify as the
+previous setup attempt. Do not reuse its old destination. Configuration and OAuth
+grants survive a client restart, but live watcher ownership must be established
+for the current conversation. The setup restart above is user-driven; feedback
+notifications must never launch or resume a replacement agent process.
+
 ## Codex
 
 Check `codex mcp get relaynote` (or `codex mcp list`) first. For a new connection:
@@ -115,7 +174,7 @@ npx skills add dencyuinc/relaynote-skills --skill relaynote -g
 Stable releases use Git tags. To deliberately install a specific release:
 
 ```bash
-npx skills add https://github.com/dencyuinc/relaynote-skills/tree/v1.3.0 --skill relaynote -g
+npx skills add https://github.com/dencyuinc/relaynote-skills/tree/v1.3.2 --skill relaynote -g
 ```
 
 A pinned release should move only when requested; do not silently replace it with
