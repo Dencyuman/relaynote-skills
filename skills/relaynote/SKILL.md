@@ -1,8 +1,8 @@
 ---
 name: relaynote
-description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, respond to feedback on a Relaynote session, or continue work automatically after approval.
+description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "1.2.1"
+  version: "1.2.2"
   author: DENCYU Inc.
 ---
 
@@ -17,16 +17,6 @@ Write reports in the user's working language.
 When the user asks to install/connect Relaynote, or its MCP tools are unavailable,
 read [references/setup.md](references/setup.md). It covers client detection, OAuth,
 verification, reconnecting, skill updates, and existing API-key clients. Prefer OAuth for new connections; preserve working API-key configurations unless the user requests migration. Never ask users to paste keys into chat.
-
-## Background continuation
-
-For onboarding, automatic approval/change-request handling, or background monitoring,
-read [references/background.md](references/background.md). The bundled Node CLI
-installs a user service, logs into Relaynote with its own OAuth flow, and starts a
-new Codex or Claude Code background conversation from an explicit handoff after a
-decision. Installing the skill copies the CLI; it does not execute it automatically.
-Verify service status before claiming it is active. Automatic launch does not
-support Cursor or other clients yet; offer the documented wait command instead.
 
 ## Reporting
 

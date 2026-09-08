@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2 — 2026-09-08
+
+- Remove the background CLI and its setup instructions. It started a separate agent conversation instead of resuming the originating conversation.
+- Retain MCP setup and the report/review workflow.
+
 ## 1.2.1 — 2026-09-07
 
 - Recheck authorization and the exact review decision immediately before launching an AI.
