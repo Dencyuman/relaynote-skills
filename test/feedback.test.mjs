@@ -4,8 +4,7 @@ const empty={current_round:1,latest_review:null,open_comments:[],forms:[],tables
 const decision={...empty,latest_review:{id:'decision-1',round:1,decision:'approved'}};
 const at=(review,updated_at)=>({...review,updated_at});
 
-// No waitForChange injected: this is the legacy polling path an un-upgraded server falls back to.
-function setup(values,options={}){let state=null,index=0,events=[];const abort=new AbortController();return {events,abort,run:()=>observe({sessionId:'test',events:'feedback',getReview:async()=>{const v=values[Math.min(index++,values.length-1)];if(v instanceof Error)throw v;return v},deliver:async e=>events.push(e),loadState:async()=>state,saveState:async v=>{state=v},wait:async()=>{if(index>=values.length)abort.abort()},signal:abort.signal,...options})}}
+function setup(values,options={}){let state=null,index=0,events=[];const abort=new AbortController();const take=async()=>{if(index>=values.length){abort.abort();return {pending:true,updated_at:'t'}}const v=values[index++];if(v instanceof Error)throw v;return {...v,updated_at:'t'+index}};return {events,abort,run:()=>observe({sessionId:'test',events:'feedback',getReview:take,waitForChange:take,deliver:async e=>events.push(e),loadState:async()=>state,saveState:async v=>{state=v},wait:async()=>{},signal:abort.signal,...options})}}
 test('long idle/reconnect needs no model and decision is delivered once',async()=>{const x=setup([empty,new Error('network'),empty,decision]);await x.run();assert.equal(x.events.length,1);assert.equal(x.events[0].feedback.decision.decision,'approved')});
 test('comment edits and a later decision reach the same listener; unchanged polls do not',async()=>{const comment={...empty,open_comments:[{id:'c',body:'fix'}]};const edited={...comment,open_comments:[{id:'c',body:'fix please'}]};const x=setup([empty,comment,comment,edited,decision,decision],{continuous:true});await x.run();assert.equal(x.events.length,3)});
 test('an empty new AI round is not feedback',async()=>{const x=setup([empty,{...empty,current_round:2}],{continuous:true});await x.run();assert.equal(x.events.length,0)});
@@ -30,13 +29,13 @@ function longPoll(values,options={}){
   return {events,modes,retries,sinces,waits,saved,abort,get state(){return state},run:()=>observe({...base,...options})};
 }
 
-test('a long-poll timeout re-arms without delivering or moving the cursor',async()=>{
+test('a push wait timeout re-arms without delivering or moving the cursor',async()=>{
   const x=longPoll([at(empty,'t0'),{pending:true,updated_at:'t0'},{pending:true,updated_at:'t0'}]);
   await x.run();
   assert.equal(x.events.length,0);
   assert.deepEqual(x.sinces,['t0','t0','t0']);
   assert.deepEqual(x.waits,[]); // no sleeping between long polls; the request itself is the wait
-  assert.deepEqual(x.modes,['long-poll']);
+  assert.deepEqual(x.modes,['websocket']);
 });
 
 test('a change wakes the watcher once and stores the new updated_at cursor',async()=>{
@@ -48,21 +47,8 @@ test('a change wakes the watcher once and stores the new updated_at cursor',asyn
   assert.deepEqual(x.sinces,['t0','t1']);
 });
 
-test('a server without updated_at falls back to polling instead of long polling',async()=>{
-  const x=longPoll([empty,decision]);
-  await x.run();
-  assert.deepEqual(x.modes,['long-poll','poll']);
-  assert.deepEqual(x.sinces,[]); // never long-polled
-  assert.equal(x.events.length,1);
-  assert.deepEqual(x.waits,[3000,3000]); // legacy cadence
-});
-
-test('a rejected wait_for/since argument falls back to polling without counting as an outage',async()=>{
-  const x=longPoll([at(empty,'t0'),new Error('MCP protocol error'),at(decision,'t1')]);
-  await x.run();
-  assert.deepEqual(x.modes,['long-poll','poll']);
-  assert.equal(x.retries.length,0);
-  assert.equal(x.events.length,1);
+test('a server without a change cursor is rejected without polling',async()=>{
+ const x=longPoll([empty,decision]);await assert.rejects(x.run(),/must provide a change cursor/);assert.equal(x.sinces.length,0);
 });
 
 test('transient failures retry with backoff and then succeed',async()=>{
@@ -71,16 +57,16 @@ test('transient failures retry with backoff and then succeed',async()=>{
   assert.equal(x.retries.length,2);
   assert.deepEqual(x.waits,[3000,6000]);
   assert.equal(x.events.length,1);
-  assert.deepEqual(x.modes,['long-poll']); // an outage is not a downgrade
+  assert.deepEqual(x.modes,['websocket']); // an outage is not a downgrade
 });
 
-test('a long-poll delivery error still fails closed without committing the cursor',async()=>{
+test('a push wait delivery error still fails closed without committing the cursor',async()=>{
   const x=longPoll([at(decision,'t1')],{deliver:async()=>{throw new Error('origin unavailable')}});
   await assert.rejects(x.run(),/origin unavailable/);
   assert.deepEqual(x.saved,[]);
 });
 
-test('a resumed watcher long-polls from its persisted cursor',async()=>{
+test('a resumed watcher push waits from its persisted cursor',async()=>{
   const s=snapshot(decision,'feedback');
   const x=longPoll([at(decision,'t1'),at(decision,'t1')],{loadState:async()=>({round:1,hash:fingerprint(s),updatedAt:'t1'})});
   await x.run();

@@ -1,0 +1,200 @@
+[
+  {
+    "id": "codex",
+    "name": "Codex",
+    "host": "CLI",
+    "skillAgent": "codex",
+    "delivery": "codex",
+    "support": "verified",
+    "docs": "https://developers.openai.com/codex/cli/"
+  },
+  {
+    "id": "claude-code",
+    "name": "Claude Code",
+    "host": "CLI",
+    "skillAgent": "claude-code",
+    "delivery": "monitor",
+    "support": "verified",
+    "docs": "https://code.claude.com/docs/en/hooks"
+  },
+  {
+    "id": "cursor-cli",
+    "name": "Cursor",
+    "host": "CLI",
+    "skillAgent": "cursor",
+    "delivery": "monitor",
+    "support": "verified",
+    "docs": "https://cursor.com/docs/cli/overview"
+  },
+  {
+    "id": "orca",
+    "name": "Orca",
+    "host": "Codex",
+    "skillAgent": "codex",
+    "delivery": "orca",
+    "support": "verified",
+    "docs": "https://orca.so"
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode",
+    "host": "TUI",
+    "skillAgent": "opencode",
+    "delivery": "http",
+    "support": "documented",
+    "docs": "https://opencode.ai/docs/server/"
+  },
+  {
+    "id": "qwen-code",
+    "name": "Qwen Code",
+    "host": "CLI",
+    "skillAgent": "qwen-code",
+    "delivery": "monitor",
+    "support": "documented",
+    "docs": "https://qwenlm.github.io/qwen-code-docs/"
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "host": "IDE",
+    "skillAgent": "cursor",
+    "delivery": "hook",
+    "support": "documented",
+    "docs": "https://cursor.com/docs/hooks"
+  },
+  {
+    "id": "github-copilot",
+    "name": "GitHub Copilot",
+    "host": "CLI / ACP",
+    "skillAgent": "github-copilot",
+    "delivery": "acp",
+    "support": "documented",
+    "docs": "https://docs.github.com/en/copilot/how-tos/copilot-cli"
+  },
+  {
+    "id": "goose",
+    "name": "Goose",
+    "host": "CLI",
+    "skillAgent": "goose",
+    "delivery": "hook",
+    "support": "documented",
+    "docs": "https://block.github.io/goose/docs/"
+  },
+  {
+    "id": "amp",
+    "name": "Amp",
+    "host": "Execute",
+    "skillAgent": "amp",
+    "delivery": "stdin",
+    "support": "documented",
+    "docs": "https://ampcode.com/docs"
+  },
+  {
+    "id": "kiro-cli",
+    "name": "Kiro",
+    "host": "CLI / ACP",
+    "skillAgent": "kiro-cli",
+    "delivery": "acp",
+    "support": "documented",
+    "docs": "https://kiro.dev/docs/cli/"
+  },
+  {
+    "id": "continue",
+    "name": "Continue",
+    "host": "CLI / Serve",
+    "skillAgent": "continue",
+    "delivery": "http",
+    "support": "documented",
+    "docs": "https://docs.continue.dev/"
+  },
+  {
+    "id": "crush",
+    "name": "Crush",
+    "host": "Server",
+    "skillAgent": "crush",
+    "delivery": "http",
+    "support": "documented",
+    "docs": "https://github.com/charmbracelet/crush"
+  },
+  {
+    "id": "devin",
+    "name": "Devin",
+    "host": "Cloud",
+    "skillAgent": null,
+    "delivery": "http",
+    "support": "documented",
+    "docs": "https://docs.devin.ai/api-reference/v1/sessions/send-a-message-to-an-existing-devin-session"
+  },
+  {
+    "id": "gemini-cli",
+    "name": "Gemini",
+    "host": "CLI",
+    "skillAgent": "gemini-cli",
+    "delivery": "hook",
+    "support": "conditional",
+    "docs": "https://geminicli.com/docs/hooks/reference/"
+  },
+  {
+    "id": "trae",
+    "name": "Trae",
+    "host": "IDE",
+    "skillAgent": "trae",
+    "delivery": "hook",
+    "support": "conditional",
+    "docs": "https://docs.trae.ai/"
+  },
+  {
+    "id": "antigravity",
+    "name": "Antigravity",
+    "host": "IDE",
+    "skillAgent": "antigravity",
+    "delivery": "http",
+    "support": "conditional",
+    "docs": "https://antigravity.google/docs/"
+  },
+  {
+    "id": "augment",
+    "name": "Augment",
+    "host": "Auggie CLI",
+    "skillAgent": "augment",
+    "delivery": "hook",
+    "support": "conditional",
+    "docs": "https://docs.augmentcode.com/cli/hooks"
+  },
+  {
+    "id": "junie",
+    "name": "Junie",
+    "host": "CLI",
+    "skillAgent": "junie",
+    "delivery": "hook",
+    "support": "conditional",
+    "docs": "https://www.jetbrains.com/help/junie/"
+  },
+  {
+    "id": "kilo",
+    "name": "Kilo Code",
+    "host": "CLI",
+    "skillAgent": "kilo",
+    "delivery": "http",
+    "support": "conditional",
+    "docs": "https://kilo.ai/docs/"
+  },
+  {
+    "id": "cline",
+    "name": "Cline",
+    "host": "CLI",
+    "skillAgent": "cline",
+    "delivery": "http",
+    "support": "conditional",
+    "docs": "https://docs.cline.bot/cline-cli/overview"
+  },
+  {
+    "id": "zed",
+    "name": "Zed",
+    "host": "ACP",
+    "skillAgent": null,
+    "delivery": "acp",
+    "support": "conditional",
+    "docs": "https://zed.dev/docs/ai/external-agents"
+  }
+]

@@ -32,46 +32,38 @@ export async function queueEvent(thread,event,remote) {
 }
 /** Auth denial and a vanished session are terminal; everything else is worth another attempt. */
 const isFatal = error => error.constructor.name==='AuthError' || /Access denied|Run .*login|Session not found|Authentication failed/.test(error.message);
-/** A server that predates wait_for/since rejects the arguments (or the tool) instead of blocking. */
-const isSchemaError = error => /MCP protocol error|Invalid argument|Invalid input|Unrecognized key|invalid_enum|Method not found|Unknown tool|Tool .* not found|expected one of/i.test(error.message);
-const LONG_POLL_SECONDS = 300;
-const LEGACY_POLL_MS = 3000, LEGACY_SLOW_POLL_MS = 15000, LEGACY_FAST_WINDOW_MS = 600000;
 const RETRY_MIN_MS = 3000, RETRY_MAX_MS = 60000;
 
 /**
- * Holds ONE long-poll request open (up to 300 s) and processes whatever wakes it.
- * Falls back to legacy interval polling when the server does not report updated_at.
+ * Processes push snapshots. Idle deadlines carry pending=true and do not fetch data.
  */
 export async function observe({sessionId,events='decisions',continuous=false,getReview,waitForChange,deliver,loadState,saveState,wait,signal,onRetry=()=>{},onMode=()=>{}}) {
   let state=await loadState();
-  // In-memory cursor: it must advance on every read, or a long poll would return instantly forever.
+  // Persist the latest source cursor with the delivered snapshot.
   let updatedAt=state?.updatedAt??null;
-  let mode=waitForChange?'long-poll':'poll';
+  if(!waitForChange)throw new Error('WebSocket Hibernation event source is required');
+  const mode='websocket';
   let backoff=0,baseline=true;
-  const startedAt=Date.now();
   await onMode(mode);
-  const fallback=async()=>{if(mode!=='poll'){mode='poll';await onMode(mode)}};
-  const legacyDelay=()=>Date.now()-startedAt<LEGACY_FAST_WINDOW_MS?LEGACY_POLL_MS:LEGACY_SLOW_POLL_MS;
   const commit=async next=>{state=updatedAt===null?next:{...next,updatedAt};await saveState(state)};
   while(!signal?.aborted){
     let review;
     try{
       // The baseline read delivers feedback that already exists before any waiting starts.
-      review=baseline||mode==='poll' ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,LONG_POLL_SECONDS);
+      review=baseline ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,300);
       backoff=0;
     }catch(e){
       if(isFatal(e))throw e;
       if(signal?.aborted)return;
-      if(mode==='long-poll'&&!baseline&&isSchemaError(e)){await fallback();continue}
       await onRetry();
       backoff=backoff?Math.min(backoff*2,RETRY_MAX_MS):RETRY_MIN_MS;
       await wait(backoff);
       continue;
     }
     if(signal?.aborted)return;
-    if(review.updated_at===undefined)await fallback();else updatedAt=review.updated_at;
-    // A long poll that timed out carries no snapshot; re-arm without touching the cursor or the model.
-    if(!baseline&&review.pending===true){if(mode==='poll')await wait(legacyDelay());continue}
+    if(review.updated_at===undefined)throw new Error('WebSocket Hibernation server must provide a change cursor');else updatedAt=review.updated_at;
+    // An idle wait deadline carries no snapshot; do not query data or invoke the model.
+    if(!baseline&&review.pending===true)continue;
     baseline=false;
     const current=snapshot(review,events),hash=fingerprint(current);
     // A fresh, empty AI revision establishes a baseline; it is not human feedback.
@@ -83,6 +75,5 @@ export async function observe({sessionId,events='decisions',continuous=false,get
       if(!continuous)return event;
     }else if(!state||state.round!==current.round||state.hash!==hash){await commit({round:current.round,hash})}
     else if(updatedAt!==null&&state.updatedAt!==updatedAt){await commit({...state})}
-    if(mode==='poll')await wait(legacyDelay());
   }
 }

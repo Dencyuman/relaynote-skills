@@ -1,6 +1,6 @@
 # Connect Relaynote
 
-Production endpoint: `https://relaynote.dencyu.co.jp/mcp`.
+Default endpoint (use the explicit origin in the onboarding prompt if different): `https://relaynote.dencyu.co.jp/mcp`.
 Onboarding: `https://relaynote.dencyu.co.jp/app/onboarding`.
 Settings, including Google linking and AI connection revocation:
 `https://relaynote.dencyu.co.jp/app?view=settings`.
@@ -28,7 +28,7 @@ create an API key for this flow.
 2. Verify the MCP tools are available in this conversation. If a reload/restart is
    required, follow the restart handoff below; do not start the watcher yet.
 3. Authenticate the bundled watcher separately with `node "$CLI" login --server ORIGIN`
-   as described in feedback.md. Explain why a second browser authorization appears:
+   as described in feedback.md. Use `login --device --server ORIGIN` when the user is on a phone or the computer is remote. Explain why a second browser authorization appears:
    the AI client and the watcher each have their own access grant. Both must use the
    SAME Relaynote account as the onboarding page. Never copy the AI client's tokens.
 4. Create a short test review through MCP. Configure a supported watcher for the
@@ -174,7 +174,7 @@ npx skills add Dencyuman/relaynote-skills --skill relaynote -g
 Stable releases use Git tags. To deliberately install a specific release:
 
 ```bash
-npx skills add https://github.com/Dencyuman/relaynote-skills/tree/v1.4.0 --skill relaynote -g
+npx skills add https://github.com/Dencyuman/relaynote-skills/tree/v2.0.0 --skill relaynote -g
 ```
 
 A pinned release should move only when requested; do not silently replace it with

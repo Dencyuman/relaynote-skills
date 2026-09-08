@@ -4,7 +4,9 @@ Read this when the user wants to continue the SAME conversation after leaving a
 Relaynote review. The bridge only observes feedback and delivers an event. It
 never runs `codex exec`, `claude -p`, a resume command, or a replacement agent.
 
-## Compatibility, verified 2026-09-08
+New host recipes and their conditions are in [agents.md](agents.md). Monitoring requires a WebSocket Hibernation server (v2 protocol); older servers are rejected.
+
+## Historical host evidence, 2026-09-08
 
 | Harness | Delivery | Evidence |
 | --- | --- | --- |
@@ -80,8 +82,7 @@ watcher and records failure; inspect the original thread before retrying.
 node "$CLI" stop WATCHER_ID
 ```
 
-The held request re-arms after its own timeout without invoking a model, and a
-stop request aborts the request in flight rather than waiting it out. No overall
+The WebSocket stays connected across local wait deadlines without invoking a model; a stop request closes it immediately. No overall
 watch deadline is imposed by this CLI. A machine restart ends
 the process; restart the watcher explicitly. The saved fingerprint avoids
 repeating the last successfully queued state. Native queue acceptance is not
@@ -107,8 +108,7 @@ the terminal and process again before each send, and stops on replacement or
 closure. It does not select the active terminal, create an agent, or fall back
 to another conversation. Do not switch conversations inside that terminal while
 watching. This adapter submits terminal input; it is host-specific, not a native
-Codex background-task completion callback. Live idle-turn verification is required
-before claiming support in a new host/version.
+Codex background-task completion callback. Label new host/version recipes as documentation-based until their live behavior is confirmed.
 
 ## Cursor CLI
 
@@ -135,17 +135,12 @@ not a subagent or a detached shell command.
 - Default `--events decisions`: approvals and change requests.
 - `--events feedback`: also detects changes to open comments, submitted form
   values and edited tables exposed by `get_session_review`.
-- Long-polls: the watcher holds ONE request open for up to 300 seconds and the
-  server answers the moment ANY human feedback lands - a decision, a comment, a
-  form answer, or a table edit - so a decision no longer has to be waited on
-  separately. On a timeout it simply re-arms; there is no polling interval and no
-  AI inference. This is not WebSocket push, and several edits inside one wake-up
-  can still be coalesced into one latest-state event.
-- Against a server that predates the long-poll contract (no `updated_at` in its
-  review payload, or a rejected `wait_for`/`since` argument) the watcher falls
-  back automatically to polling every 3 seconds for the first 10 minutes and
-  every 15 seconds after that. `status` reports which mode is active as
-  `mode: "long-poll" | "poll"`.
+- A WebSocket subscription receives bodyless change notifications. The watcher
+  reads the latest snapshot on ready/reconnect and after a change; idle deadlines
+  do not query the server. A broken socket reconnects with backoff, never polling.
+- The server must use Durable Objects WebSocket Hibernation. Ping/pong is handled
+  by the automatic responder and does not wake the model or retain the DO in memory.
+- `status` reports `websocket` or `reconnecting`. Multiple rapid edits can be coalesced.
 - Network failures back off exponentially from 3 to 60 seconds and reset after a
   successful call; the retry is recorded in `status` without waking the model.
 - Empty new AI report rounds do not trigger the model. Existing feedback can be

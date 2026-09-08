@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0 — 2026-09-09
+
+- Require a WebSocket Hibernation server. No polling fallback, no idle model calls.
+- Add device OAuth with a read-only watcher scope, reconnect snapshots, and expiration handling.
+- Add Stop hook formats, configurable HTTP delivery, and an ACP/Amp bridge that owns the original process.
+- Add host recipes for the documented A/B environments. Existing live evidence remains dated; new recipes are documentation-based.
+
 ## 1.4.0 — 2026-09-09
 
 - Replace the 3-second polling loop with a single long-poll request held up to 300 seconds, cutting a watcher's daily request count from roughly 57,600 to a few hundred.

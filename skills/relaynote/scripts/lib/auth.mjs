@@ -25,10 +25,36 @@ export async function login(base,{open=true,onUrl}={}){
  const timeout=setTimeout(()=>rejectCode(new AuthError('Login timed out')),180000);code.catch(()=>{});
  try{
   const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']});
-  const url=new URL(meta.authorization_endpoint);url.search=new URLSearchParams({client_id:client.client_id,redirect_uri:redirect,response_type:'code',scope:'relaynote offline_access',resource:base+'/mcp',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
+  const url=new URL(meta.authorization_endpoint);url.search=new URLSearchParams({client_id:client.client_id,redirect_uri:redirect,response_type:'code',scope:meta.scopes_supported?.includes('relaynote:events')?'relaynote:events offline_access':'relaynote offline_access',resource:base+'/mcp',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
   if(onUrl)await onUrl(url.href);else console.log(`Authorize Relaynote in your browser:\n${url.href}`);
   if(open){const command=process.platform==='darwin'?'open':process.platform==='win32'?null:'xdg-open';if(command){const p=spawn(command,[url.href],{stdio:'ignore'});p.on('error',()=>{});p.unref()}}
   const t=await post(meta.token_endpoint,{grant_type:'authorization_code',client_id:client.client_id,redirect_uri:redirect,code:await code,code_verifier:verifier,resource:base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');
   await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000});
  }finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
+}
+
+export async function deviceLogin(base,{onUrl}={}) {
+ base=endpoint(base);await init();
+ const response=await fetch(base+'/.well-known/oauth-authorization-server/api/auth',{signal:AbortSignal.timeout(20000),redirect:'error'});
+ if(!response.ok)throw new AuthError('OAuth discovery failed');
+ const meta=await response.json();
+ for(const k of ['device_authorization_endpoint','token_endpoint','registration_endpoint'])sameOrigin(meta[k],base);
+ const scope='relaynote:events offline_access';
+ const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[base+'/oauth/device'],token_endpoint_auth_method:'none',grant_types:['urn:ietf:params:oauth:grant-type:device_code','refresh_token'],response_types:[],scope});
+ const device=await post(meta.device_authorization_endpoint,{client_id:client.client_id,scope,resource:base+'/mcp'},true);
+ sameOrigin(device.verification_uri_complete,base);
+ if(onUrl)await onUrl(device.verification_uri_complete,device.user_code);
+ else console.log(`Open this link on your phone or computer and confirm code ${device.user_code}:\n${device.verification_uri_complete}`);
+ const deadline=Date.now()+Math.min(device.expires_in,900)*1000;
+ let interval=Math.max(5,device.interval||5)*1000;
+ while(Date.now()<deadline){
+  await new Promise(resolve=>setTimeout(resolve,interval));
+  const response=await fetch(meta.token_endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:device_code',client_id:client.client_id,device_code:device.device_code,resource:base+'/mcp'}),signal:AbortSignal.timeout(20000),redirect:'error'});
+  const t=await response.json();
+  if(response.ok && t.access_token){await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope});return;}
+  if(t.error==='authorization_pending')continue;
+  if(t.error==='slow_down'){interval+=5000;continue;}
+  throw new AuthError(`Device authorization ${t.error||'failed'}`);
+ }
+ throw new AuthError('Device authorization expired. Run login --device again.');
 }
