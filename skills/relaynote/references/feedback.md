@@ -80,8 +80,9 @@ watcher and records failure; inspect the original thread before retrying.
 node "$CLI" stop WATCHER_ID
 ```
 
-The network polling loop reconnects after request timeouts without invoking a
-model. No overall watch deadline is imposed by this CLI. A machine restart ends
+The held request re-arms after its own timeout without invoking a model, and a
+stop request aborts the request in flight rather than waiting it out. No overall
+watch deadline is imposed by this CLI. A machine restart ends
 the process; restart the watcher explicitly. The saved fingerprint avoids
 repeating the last successfully queued state. Native queue acceptance is not
 proof the model finished its work; check the original conversation.
@@ -134,8 +135,19 @@ not a subagent or a detached shell command.
 - Default `--events decisions`: approvals and change requests.
 - `--events feedback`: also detects changes to open comments, submitted form
   values and edited tables exposed by `get_session_review`.
-- Polls every 3 seconds, locally and without AI inference. This is not WebSocket
-  push, and several edits between polls can be coalesced into one latest-state event.
+- Long-polls: the watcher holds ONE request open for up to 300 seconds and the
+  server answers the moment ANY human feedback lands - a decision, a comment, a
+  form answer, or a table edit - so a decision no longer has to be waited on
+  separately. On a timeout it simply re-arms; there is no polling interval and no
+  AI inference. This is not WebSocket push, and several edits inside one wake-up
+  can still be coalesced into one latest-state event.
+- Against a server that predates the long-poll contract (no `updated_at` in its
+  review payload, or a rejected `wait_for`/`since` argument) the watcher falls
+  back automatically to polling every 3 seconds for the first 10 minutes and
+  every 15 seconds after that. `status` reports which mode is active as
+  `mode: "long-poll" | "poll"`.
+- Network failures back off exponentially from 3 to 60 seconds and reset after a
+  successful call; the retry is recorded in `status` without waking the model.
 - Empty new AI report rounds do not trigger the model. Existing feedback can be
   delivered immediately when first subscribing. Keep the same consumer ID for
   restarts to retain the saved cursor.

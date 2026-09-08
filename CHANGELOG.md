@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 — 2026-09-09
+
+- Replace the 3-second polling loop with a single long-poll request held up to 300 seconds, cutting a watcher's daily request count from roughly 57,600 to a few hundred.
+- Wake the watcher on ANY human feedback (decision, comment, form answer, table edit) via `wait_for_review` with `wait_for: "any_change"` and an `updated_at` cursor passed back as `since`.
+- Fall back automatically to polling (3s for 10 minutes, then 15s) when the server omits `updated_at` or rejects the new arguments; `status` reports `mode`.
+- Back off exponentially from 3 to 60 seconds on transient network failures, and abort an in-flight request immediately on stop.
+
 ## 1.3.2 — 2026-09-08
 
 - Guide new users through separate OAuth grants for MCP and the feedback watcher.

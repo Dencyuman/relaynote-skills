@@ -30,24 +30,59 @@ export async function queueEvent(thread,event,remote) {
     p.stdout.resume();p.stderr.resume();p.on('error',()=>{clearTimeout(timer);reject(new Error('Codex queue is unavailable'))});
     p.on('exit',code=>{clearTimeout(timer);code===0?resolve():reject(new Error('Codex queue failed; verify the originating thread and app-server. No replacement conversation was created.'))});});
 }
-export async function observe({sessionId,events='decisions',continuous=false,getReview,deliver,loadState,saveState,wait,signal,onRetry=()=>{}}) {
+/** Auth denial and a vanished session are terminal; everything else is worth another attempt. */
+const isFatal = error => error.constructor.name==='AuthError' || /Access denied|Run .*login|Session not found|Authentication failed/.test(error.message);
+/** A server that predates wait_for/since rejects the arguments (or the tool) instead of blocking. */
+const isSchemaError = error => /MCP protocol error|Invalid argument|Invalid input|Unrecognized key|invalid_enum|Method not found|Unknown tool|Tool .* not found|expected one of/i.test(error.message);
+const LONG_POLL_SECONDS = 300;
+const LEGACY_POLL_MS = 3000, LEGACY_SLOW_POLL_MS = 15000, LEGACY_FAST_WINDOW_MS = 600000;
+const RETRY_MIN_MS = 3000, RETRY_MAX_MS = 60000;
+
+/**
+ * Holds ONE long-poll request open (up to 300 s) and processes whatever wakes it.
+ * Falls back to legacy interval polling when the server does not report updated_at.
+ */
+export async function observe({sessionId,events='decisions',continuous=false,getReview,waitForChange,deliver,loadState,saveState,wait,signal,onRetry=()=>{},onMode=()=>{}}) {
   let state=await loadState();
+  // In-memory cursor: it must advance on every read, or a long poll would return instantly forever.
+  let updatedAt=state?.updatedAt??null;
+  let mode=waitForChange?'long-poll':'poll';
+  let backoff=0,baseline=true;
+  const startedAt=Date.now();
+  await onMode(mode);
+  const fallback=async()=>{if(mode!=='poll'){mode='poll';await onMode(mode)}};
+  const legacyDelay=()=>Date.now()-startedAt<LEGACY_FAST_WINDOW_MS?LEGACY_POLL_MS:LEGACY_SLOW_POLL_MS;
+  const commit=async next=>{state=updatedAt===null?next:{...next,updatedAt};await saveState(state)};
   while(!signal?.aborted){
     let review;
-    try{review=await getReview(sessionId)}catch(e){
-      if(e.constructor.name==='AuthError'||/Access denied|Run .*login|Session not found|Authentication failed/.test(e.message))throw e;
-      await onRetry();await wait();continue;
+    try{
+      // The baseline read delivers feedback that already exists before any waiting starts.
+      review=baseline||mode==='poll' ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,LONG_POLL_SECONDS);
+      backoff=0;
+    }catch(e){
+      if(isFatal(e))throw e;
+      if(signal?.aborted)return;
+      if(mode==='long-poll'&&!baseline&&isSchemaError(e)){await fallback();continue}
+      await onRetry();
+      backoff=backoff?Math.min(backoff*2,RETRY_MAX_MS):RETRY_MIN_MS;
+      await wait(backoff);
+      continue;
     }
     if(signal?.aborted)return;
+    if(review.updated_at===undefined)await fallback();else updatedAt=review.updated_at;
+    // A long poll that timed out carries no snapshot; re-arm without touching the cursor or the model.
+    if(!baseline&&review.pending===true){if(mode==='poll')await wait(legacyDelay());continue}
+    baseline=false;
     const current=snapshot(review,events),hash=fingerprint(current);
     // A fresh, empty AI revision establishes a baseline; it is not human feedback.
     const changed=state && state.round===current.round && state.hash!==hash;
     if((hasFeedback(current) && (!state||state.hash!==hash)) || (events==='feedback' && changed)) {
       const event=eventFor(sessionId,current);
       await deliver(event); // Fail closed on ambiguous delivery; never silently replay it.
-      state={round:current.round,hash,lastEventId:event.event_id};await saveState(state);
+      await commit({round:current.round,hash,lastEventId:event.event_id});
       if(!continuous)return event;
-    }else if(!state||state.round!==current.round||state.hash!==hash){state={round:current.round,hash};await saveState(state)}
-    await wait();
+    }else if(!state||state.round!==current.round||state.hash!==hash){await commit({round:current.round,hash})}
+    else if(updatedAt!==null&&state.updatedAt!==updatedAt){await commit({...state})}
+    if(mode==='poll')await wait(legacyDelay());
   }
 }

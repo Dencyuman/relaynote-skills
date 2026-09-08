@@ -5,7 +5,7 @@ import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {home,init,read,write,endpoint,VERSION} from './lib/state.mjs';
 import {login,apiKeyLogin,credentials} from './lib/auth.mjs';
-import {getReview} from './lib/mcp.mjs';
+import {getReview,waitForChange} from './lib/mcp.mjs';
 import {observe,queueEvent,fingerprint,codexArgs,verifyCodexQueue} from './lib/feedback.mjs';
 import {captureOrca,sendOrca} from './lib/orca.mjs';
 const entry=fileURLToPath(import.meta.url),[command,...args]=process.argv.slice(2);
@@ -28,16 +28,18 @@ async function watch(){
   await lock.writeFile(String(process.pid));await lock.close();
   const abort=new AbortController();let interruptWait;
   const stop=()=>{abort.abort();interruptWait?.()};process.on('SIGTERM',stop);process.on('SIGINT',stop);
-  const status={id,sessionId,delivery,events,thread:delivery==='orca'?origin.thread:delivery==='codex'?thread:undefined,origin,pid:process.pid,startedAt:new Date().toISOString(),status:'waiting'};
+  const status={id,sessionId,delivery,events,thread:delivery==='orca'?origin.thread:delivery==='codex'?thread:undefined,origin,pid:process.pid,startedAt:new Date().toISOString(),status:'waiting',mode:'long-poll'};
   try{
     await write(statusPath,status);
     if(process.send){process.send({ready:true,id,pid:process.pid});process.disconnect()}
     await observe({sessionId,events,continuous:flag('continuous'),signal:abort.signal,
-      getReview:async id=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return getReview(id)},
+      getReview:async id=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return getReview(id,{signal:abort.signal})},
+      waitForChange:async(id,since,seconds)=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return waitForChange(id,since,seconds,{signal:abort.signal})},
       loadState:()=>read(statePath).catch(e=>{if(e.code==='ENOENT')return null;throw e}),saveState:state=>write(statePath,state),
-      wait:()=>new Promise(resolve=>{const timer=setTimeout(()=>{interruptWait=null;resolve()},3000);interruptWait=()=>{clearTimeout(timer);resolve()}}),
+      wait:ms=>new Promise(resolve=>{const timer=setTimeout(()=>{interruptWait=null;resolve()},ms);interruptWait=()=>{clearTimeout(timer);resolve()}}),
       deliver:async event=>{if(abort.signal.aborted)return; if(delivery==='orca')await sendOrca(origin,event,{signal:abort.signal});else if(delivery==='codex')await queueEvent(thread,event,remote);else await new Promise((resolve,reject)=>process.stdout.write(JSON.stringify(event)+'\n',e=>e?reject(e):resolve()));await write(statusPath,{...status,lastEventAt:new Date().toISOString(),lastEventId:event.event_id})},
       onRetry:()=>write(statusPath,{...status,lastConnectionErrorAt:new Date().toISOString()}),
+      onMode:async next=>{status.mode=next;await write(statusPath,{...await read(statusPath).catch(()=>({})),...status})},
     });
     await write(statusPath,{...await read(statusPath),status:abort.signal.aborted?'stopped':'completed'});
   }catch(e){await write(statusPath,{...status,status:'failed',error:e.message});throw e}
@@ -70,6 +72,6 @@ try{
       const state=await read(path.join(home,'watch-'+id+'.json'));const pid=Number(await fs.readFile(path.join(home,'lock-'+id),'utf8').catch(()=>0));
       if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!command.includes(entry))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');}console.log('Stop requested');break;
     }
-    default:console.log('Relaynote feedback bridge 1.3.2\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions|feedback] [--continuous] [--consumer CONVERSATION_ID]\nstart SESSION --delivery orca [--events feedback] [--continuous]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events feedback] [--continuous]\nstatus | stop WATCHER_ID');
+    default:console.log('Relaynote feedback bridge 1.4.0\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions|feedback] [--continuous] [--consumer CONVERSATION_ID]\nstart SESSION --delivery orca [--events feedback] [--continuous]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events feedback] [--continuous]\nstatus | stop WATCHER_ID');
   }
 }catch(e){console.error(e.message);process.exitCode=1}

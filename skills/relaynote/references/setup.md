@@ -174,7 +174,7 @@ npx skills add Dencyuman/relaynote-skills --skill relaynote -g
 Stable releases use Git tags. To deliberately install a specific release:
 
 ```bash
-npx skills add https://github.com/Dencyuman/relaynote-skills/tree/v1.3.2 --skill relaynote -g
+npx skills add https://github.com/Dencyuman/relaynote-skills/tree/v1.4.0 --skill relaynote -g
 ```
 
 A pinned release should move only when requested; do not silently replace it with
