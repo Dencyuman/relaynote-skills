@@ -163,18 +163,18 @@ merely because a file was written.
 
 ## Skill updates
 
-The public distribution source is `dencyuinc/relaynote-skills`.
+The public distribution source is `Dencyuman/relaynote-skills`.
 `npx skills update` updates installed skills (possibly more than Relaynote).
 For a Relaynote-only refresh, reinstall from the same source and selected agent:
 
 ```bash
-npx skills add dencyuinc/relaynote-skills --skill relaynote -g
+npx skills add Dencyuman/relaynote-skills --skill relaynote -g
 ```
 
 Stable releases use Git tags. To deliberately install a specific release:
 
 ```bash
-npx skills add https://github.com/dencyuinc/relaynote-skills/tree/v1.3.2 --skill relaynote -g
+npx skills add https://github.com/Dencyuman/relaynote-skills/tree/v1.3.2 --skill relaynote -g
 ```
 
 A pinned release should move only when requested; do not silently replace it with

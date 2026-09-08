@@ -4,7 +4,7 @@ Official agent skill for [Relaynote](https://relaynote.dencyu.co.jp), maintained
 Share AI work as review sessions and receive contextual comments, answers, and approvals.
 
 ```bash
-npx skills add dencyuinc/relaynote-skills --skill relaynote -g
+npx skills add Dencyuman/relaynote-skills --skill relaynote -g
 ```
 
 Add `--agent codex`, `--agent claude-code`, or `--agent cursor` to select a client.
@@ -22,7 +22,7 @@ and GitHub Releases. `skills/relaynote/SKILL.md` records the matching version.
 
 To update installed skills, use `npx skills update`. To refresh only Relaynote,
 run its install command again. A fixed release can be installed from
-`https://github.com/dencyuinc/relaynote-skills/tree/v1.3.2` instead of the shorthand.
+`https://github.com/Dencyuman/relaynote-skills/tree/v1.3.2` instead of the shorthand.
 
 Version 1.x targets Relaynote's OAuth MCP and the reporting guide tool. The server's
 `get_reporting_guide` is the authoritative reference for tool schemas and limits.
