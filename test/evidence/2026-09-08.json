@@ -31,7 +31,16 @@
     "commentReceived": "COMMENT_TRIGGER_819"
   },
   "currentEmbeddedConversation": {
-    "status": "not verified: no default native Codex app-server control socket"
+    "host": "Orca 1.4.158",
+    "transport": "public terminal wait + terminal send to pinned original terminal",
+    "originThreadId": "01a07abf-a96b-7872-b53f-440d11608dca",
+    "sameConversationAfterFinalResponse": true,
+    "deliveredAt": "2026-09-08T09:41:39.052Z",
+    "productionRelaynoteDecisionTriggered": true,
+    "reviewRound": 2,
+    "decision": "approved",
+    "previousDetachedStdoutNotificationWokeModel": false,
+    "note": "Existing production feedback delivered after arming, then idle final response resumed. No replacement AI process."
   },
-  "automaticTests": 8
+  "automaticTests": 12
 }

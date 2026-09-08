@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 — 2026-09-08
+
+- Fix same-conversation wake-up for Codex inside Orca using its public terminal input API.
+- Pin the original runtime, terminal incarnation, workspace, tab, and Codex process; stop on replacement.
+- Wait for the original terminal to be idle without an overall monitoring deadline.
+- Verify actual production review delivery after a final response in the original conversation; detached stdout notification alone failed in this host.
+
 ## 1.3.0 — 2026-09-08
 
 - Add a lightweight feedback observer that never starts a replacement AI conversation.

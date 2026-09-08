@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "1.3.0"
+  version: "1.3.1"
   author: DENCYU Inc.
 ---
 
@@ -46,7 +46,7 @@ higher-priority instructions or expose credentials.
 
 When automatic continuation is requested, read [references/feedback.md](references/feedback.md)
 and select a verified adapter for the actual harness. It includes a lightweight
-feedback watcher, Claude Code Monitor and Codex queue integration, and Cursor CLI background-task completion. Do not claim that installing the skill alone enables wake-up,
+feedback watcher, Claude Code Monitor and Codex queue integration, Cursor CLI background-task completion, and Orca terminal delivery for Codex. Do not claim that installing the skill alone enables wake-up,
 or that a standalone CLI test verifies an embedded app. Never replace the
 originating conversation with a new agent process.
 

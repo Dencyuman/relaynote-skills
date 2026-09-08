@@ -11,6 +11,7 @@ never runs `codex exec`, `claude -p`, a resume command, or a replacement agent.
 | Claude Code 2.1.258, interactive | Native `Monitor` with `persistent: true`; CLI emits JSON lines | Actual idle conversation resumed after a delayed event; actual local Relaynote comment and decision reached the same conversation |
 | Codex CLI 0.153.4 / app-server | `codex queue --thread UUID`, optional local `--remote` | Actual completed turn resumed on the identical thread ID, retaining its original context; tested with actual local Relaynote MCP |
 | Cursor CLI 2026.09.02-c22c1a3 | Native background Shell; CLI emits one event and exits | Actual interactive conversation resumed after a 65-second delayed task completion, then received an actual local Relaynote comment in the same conversation |
+| Codex inside Orca 1.4.158 | Pinned original terminal via `terminal wait` + `terminal send` | Actual production Relaynote decision resumed this same conversation after its final response |
 | Codex embedded in other apps, Cursor editor, other agents | Host-specific | Not verified by testing a standalone CLI; run the host's own delayed-event probe first |
 
 A background shell existing is NOT proof that finishing it wakes an idle model.
@@ -84,6 +85,29 @@ model. No overall watch deadline is imposed by this CLI. A machine restart ends
 the process; restart the watcher explicitly. The saved fingerprint avoids
 repeating the last successfully queued state. Native queue acceptance is not
 proof the model finished its work; check the original conversation.
+
+## Codex inside Orca
+
+When this conversation exposes `ORCA_TERMINAL_HANDLE`, use the host adapter:
+
+```sh
+node "$CLI" start SESSION_UUID --delivery orca --events feedback --continuous
+```
+
+The detached Node watcher uses Orca's public `terminal wait` and `terminal send`
+commands. It waits for the original terminal to become idle, then submits a
+labelled automatic notification to that terminal. A tool-output notification
+alone did not wake the model in this host; do not use detached stdout/`notify`
+as its wake-up adapter.
+
+This path captures the originating terminal handle, incarnation, runtime,
+workspace, tab, Codex thread ID, and ancestor Codex process identity. It checks
+the terminal and process again before each send, and stops on replacement or
+closure. It does not select the active terminal, create an agent, or fall back
+to another conversation. Do not switch conversations inside that terminal while
+watching. This adapter submits terminal input; it is host-specific, not a native
+Codex background-task completion callback. Live idle-turn verification is required
+before claiming support in a new host/version.
 
 ## Cursor CLI
 
