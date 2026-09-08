@@ -187,3 +187,21 @@ For automatic reception after the response ends, read [feedback.md](feedback.md)
 Identify the actual host and version, configure the bridge's own authentication,
 and verify a delayed event in the SAME conversation before claiming it enabled.
 Do not infer that an embedded client supports the standalone CLI's transport.
+
+## Explicit onboarding authentication choices
+
+The onboarding handoff may specify MCP and watcher authentication independently.
+Honor those choices instead of the OAuth defaults above. MCP supports browser OAuth
+or an API key; the watcher supports browser OAuth (`login`), Device OAuth
+(`login --device`), or an API key (`login --api-key-stdin`). Do not start a second
+OAuth flow for a connection selected as API key. Device OAuth here authorizes the
+watcher, not the MCP client's connection.
+
+When the user explicitly supplies an onboarding-issued key in the handoff, configure
+only the connections selected as API key with it. Store it using the client's secure
+credential mechanism; pass it to the watcher through stdin, not command arguments.
+Never echo it or include it in reports, screenshots, repository files or a restart
+summary. The onboarding page can supply the selected methods and key again after
+restart. Do not generate another key or silently change methods. If a selected
+method is unsupported by the installed client, explain that and ask the user to
+change their selection before proceeding.

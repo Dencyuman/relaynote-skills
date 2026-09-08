@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "2.0.0"
+  version: "2.0.1"
   author: DENCYU Inc.
 ---
 
@@ -16,7 +16,7 @@ Write reports in the user's working language.
 
 When the user asks to install/connect Relaynote, or its MCP tools are unavailable,
 read [references/setup.md](references/setup.md). It covers client detection, OAuth,
-verification, reconnecting, skill updates, and existing API-key clients. Prefer OAuth for new connections; preserve working API-key configurations unless the user requests migration. Never ask users to paste keys into chat.
+verification, reconnecting, skill updates, and existing API-key clients. Honor explicit onboarding authentication choices for MCP and watcher separately. Prefer OAuth for new connections without an explicit choice; preserve working API-key configurations unless the user requests migration. Never ask users to paste keys into chat.
 
 ## Reporting
 

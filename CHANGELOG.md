@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1 — 2026-09-09
+
+- Honor separate MCP and watcher authentication choices from onboarding, including explicitly supplied API keys and restart handoffs.
+
 ## 2.0.0 — 2026-09-09
 
 - Require a WebSocket Hibernation server. No polling fallback, no idle model calls.
