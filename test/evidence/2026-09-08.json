@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-09-08",
+  "codex": {
+    "version": "0.153.4",
+    "transport": "local app-server + codex queue",
+    "originThreadId": "01a08042-5dbe-7781-9822-e46224e27874",
+    "sameThreadAfterFinalResponse": true,
+    "localRelaynoteCommentTriggered": true,
+    "rememberedPhrase": "ORIGIN_CODEX_819_RESUMED"
+  },
+  "claudeCode": {
+    "version": "2.1.258",
+    "transport": "Monitor persistent=true",
+    "delayedProbeThreadId": "8618ad17-99c5-4ed3-9026-3a9192aa922f",
+    "delayAfterArmingSeconds": 65,
+    "sameConversationAfterFinalResponse": true,
+    "localRelaynoteThreadId": "44f1cf0a-8a66-457c-b3fb-310e4f6e1ac8",
+    "commentReceived": "COMMENT_TRIGGER_819",
+    "secondEventDecision": "changes_requested",
+    "rememberedPhrase": "ORIGIN_LIVE_CLAUDE_819"
+  },
+  "cursor": {
+    "version": "2026.09.02-c22c1a3",
+    "transport": "native interactive background Shell completion",
+    "originThreadId": "ab9513d7-60e8-4e0f-bc3b-609936c71fb8",
+    "sameConversationAfterFinalResponse": true,
+    "delayAfterArmingSeconds": 65,
+    "delayedEventReply": "ORIGIN_CURSOR_819_RESUMED",
+    "localRelaynoteCommentTriggered": true,
+    "rememberedPhrase": "ORIGIN_CURSOR_819",
+    "commentReceived": "COMMENT_TRIGGER_819"
+  },
+  "currentEmbeddedConversation": {
+    "status": "not verified: no default native Codex app-server control socket"
+  },
+  "automaticTests": 8
+}

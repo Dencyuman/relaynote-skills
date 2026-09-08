@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 — 2026-09-08
+
+- Add a lightweight feedback observer that never starts a replacement AI conversation.
+- Deliver events through Claude Code Monitor, Codex existing-thread queue, and Cursor CLI background-task completion.
+- Verify same-conversation continuation after final responses on all three CLIs, including real local Relaynote comments.
+- Support comment/form/table changes as well as decisions, reconnects, persisted cursors, and explicit cancellation.
+- Keep embedded apps and editor surfaces explicitly unverified until their own wake-up test passes.
+
 ## 1.2.2 — 2026-09-08
 
 - Remove the background CLI and its setup instructions. It started a separate agent conversation instead of resuming the originating conversation.

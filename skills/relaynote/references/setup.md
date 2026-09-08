@@ -115,9 +115,16 @@ npx skills add dencyuinc/relaynote-skills --skill relaynote -g
 Stable releases use Git tags. To deliberately install a specific release:
 
 ```bash
-npx skills add https://github.com/dencyuinc/relaynote-skills/tree/v1.2.2 --skill relaynote -g
+npx skills add https://github.com/dencyuinc/relaynote-skills/tree/v1.3.0 --skill relaynote -g
 ```
 
 A pinned release should move only when requested; do not silently replace it with
 main. `metadata.version` documents the release; the Git source/ref determines the
 installed content. Skill updates do not automatically register or authenticate MCP.
+
+## Automatic feedback
+
+For automatic reception after the response ends, read [feedback.md](feedback.md).
+Identify the actual host and version, configure the bridge's own authentication,
+and verify a delayed event in the SAME conversation before claiming it enabled.
+Do not infer that an embedded client supports the standalone CLI's transport.
