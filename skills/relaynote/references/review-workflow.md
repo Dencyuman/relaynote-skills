@@ -16,6 +16,14 @@ Use concise Markdown prose. Use a checklist for parallel validation items,
 need to add or edit an unknown number of rows. Consult `get_reporting_guide`
 for exact supported schemas instead of guessing fields or copying stale examples.
 
+Use Markdown links for inline citations or references within prose. Use a `link`
+block for destinations the reviewer should open (PRs, previews, deliverables,
+related docs): group 1–10 related links in one block, each with a short meaningful
+title and an optional description of what to inspect. Do not make one block per
+URL or duplicate the same link in prose and cards. Split unrelated purposes into
+separate blocks; keep secondary references inline. Read the current server's
+schema from `get_reporting_guide` before using the multi-link format.
+
 Read images attached to comments or decisions when image counts are nonzero.
 Follow the associated `block_id` and review round so feedback is applied to the
 correct content. Re-fetch report blocks if context is missing.

@@ -1,3 +1,7 @@
+# 3.0.5
+
+- Clarify inline Markdown references versus grouped link blocks (1–10 destinations); check the connected server schema before using grouped links.
+
 # 3.0.4
 
 - Identify the pinned watcher binding in signed WebSocket tickets so Relaynote can
