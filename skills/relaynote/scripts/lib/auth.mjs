@@ -22,17 +22,26 @@ export async function login(base,{open=true,onUrl}={}){
  for(const k of ['authorization_endpoint','token_endpoint','registration_endpoint'])sameOrigin(meta[k],base);
  const state=crypto.randomBytes(32).toString('base64url'),verifier=crypto.randomBytes(48).toString('base64url');
  let resolveCode,rejectCode;const code=new Promise((a,b)=>{resolveCode=a;rejectCode=b});
- const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://localhost');if(u.pathname!=='/callback'||u.searchParams.get('state')!==state){res.writeHead(400);res.end('Invalid callback');return}if(!u.searchParams.get('code')){res.end('Authorization was not completed.');rejectCode(new AuthError('Authorization denied'));return}res.setHeader('Content-Type','text/plain; charset=utf-8');res.end('Relaynoteに接続しました。この画面を閉じてください。');resolveCode(u.searchParams.get('code'));});
+ let callbackResponse,claimed=false;
+ const complete=async(result)=>{if(!callbackResponse||callbackResponse.writableEnded||callbackResponse.destroyed)return;const res=callbackResponse;await new Promise(resolve=>{res.once('finish',resolve);res.once('close',resolve);res.writeHead(303,{'Location':base+'/oauth/complete?result='+result,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});res.end();});};
+ const server=http.createServer((req,res)=>{
+  const u=new URL(req.url,'http://localhost');
+  if(req.method!=='GET'||u.pathname!=='/callback'||u.searchParams.get('state')!==state||claimed){res.writeHead(400);res.end('Invalid callback');return;}
+  claimed=true;callbackResponse=res;
+  if(u.searchParams.has('error')||!u.searchParams.get('code')){rejectCode(new AuthError('Authorization denied'));return;}
+  resolveCode(u.searchParams.get('code'));
+ });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const redirect=`http://127.0.0.1:${server.address().port}/callback`;
  const timeout=setTimeout(()=>rejectCode(new AuthError('Login timed out')),180000);code.catch(()=>{});
  try{
-  const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']});
+  const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',logo_uri:base+'/logo.svg',application_type:'native',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']});
   const url=new URL(meta.authorization_endpoint);url.search=new URLSearchParams({client_id:client.client_id,redirect_uri:redirect,response_type:'code',scope:watcherScope(meta),resource:base+'/mcp',state,code_challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
   if(onUrl)await onUrl(url.href);else console.log(`Authorize Relaynote in your browser:\n${url.href}`);
   if(open){const command=process.platform==='darwin'?'open':process.platform==='win32'?null:'xdg-open';if(command){const p=spawn(command,[url.href],{stdio:'ignore'});p.on('error',()=>{});p.unref()}}
   const t=await post(meta.token_endpoint,{grant_type:'authorization_code',client_id:client.client_id,redirect_uri:redirect,code:await code,code_verifier:verifier,resource:base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');
   await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope});
- }finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
+  await complete('connected');
+ }catch(error){await complete(error.message==='Authorization denied'?'denied':'failed');throw error;}finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
 
 export async function deviceLogin(base,{onUrl}={}) {
@@ -42,7 +51,7 @@ export async function deviceLogin(base,{onUrl}={}) {
  const meta=await response.json();
  for(const k of ['device_authorization_endpoint','token_endpoint','registration_endpoint'])sameOrigin(meta[k],base);
  const scope=watcherScope(meta);
- const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',application_type:'native',redirect_uris:[base+'/oauth/device'],token_endpoint_auth_method:'none',grant_types:['urn:ietf:params:oauth:grant-type:device_code','refresh_token'],response_types:[],scope});
+ const client=await post(meta.registration_endpoint,{client_name:'Relaynote background watcher',logo_uri:base+'/logo.svg',application_type:'native',redirect_uris:[base+'/oauth/device'],token_endpoint_auth_method:'none',grant_types:['urn:ietf:params:oauth:grant-type:device_code','refresh_token'],response_types:[],scope});
  const device=await post(meta.device_authorization_endpoint,{client_id:client.client_id,scope,resource:base+'/mcp'},true);
  sameOrigin(device.verification_uri_complete,base);
  if(onUrl)await onUrl(device.verification_uri_complete,device.user_code);

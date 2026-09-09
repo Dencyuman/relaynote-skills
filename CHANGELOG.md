@@ -1,3 +1,7 @@
+# 3.0.1
+
+- `upload`: shrink by width (1600px) with a separate height allowance (5x), so a tall stitched page capture keeps a readable width instead of collapsing to a sliver.
+
 # 3.0.0
 
 - Add `upload FILE --session SESSION_ID`: shrinks the image (1600px, WebP q76, via sharp / ImageMagick / cwebp / sips) and sends the bytes straight to `POST /api/sessions/:id/assets`; the printed `asset_id` goes into `append_blocks` as an `image` block, so screenshots never pass through the model. Logins now request the upload-only `relaynote:upload` scope next to the read-only events scope; a read-only grant cannot upload.

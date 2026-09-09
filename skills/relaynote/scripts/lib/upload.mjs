@@ -6,8 +6,13 @@ import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {accessToken,AuthError} from './auth.mjs';
 
-// Reviewers read on a phone and the lightbox zooms, so 1x at 1600px is plenty.
+// Reviewers read on a phone and the lightbox zooms, so 1x at 1600px wide is plenty.
+// Height gets more room: a stitched full-page capture is tall, not wide, and
+// shrinking it by its longest side would leave the text unreadable.
 export const DEFAULTS={maxSide:1600,quality:76};
+export const TALL=5;
+const limits=maxSide=>({width:maxSide,height:maxSide*TALL});
+const oversize=(size,maxSide)=>size?size.width>maxSide||size.height>maxSide*TALL:null;
 const TYPES=[
  ['image/png',b=>b.length>=8&&b.readUInt32BE(0)===0x89504e47],
  ['image/jpeg',b=>b.length>=3&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff],
@@ -37,11 +42,11 @@ const loadSharp=()=>{for(const base of [process.cwd()+'/',path.join(os.homedir()
 /** Available converters, best first. Each takes (input, {maxSide, quality}) and returns {buffer, extension}. */
 export function converters({sharp=loadSharp(),available=has}={}){
  const list=[];
- if(sharp)list.push(['sharp',async(input,{maxSide,quality})=>({buffer:await sharp(input).rotate().resize({width:maxSide,height:maxSide,fit:'inside',withoutEnlargement:true}).webp({quality}).toBuffer(),extension:'webp'})]);
+ if(sharp)list.push(['sharp',async(input,{maxSide,quality})=>({buffer:await sharp(input).rotate().resize({...limits(maxSide),fit:'inside',withoutEnlargement:true}).webp({quality}).toBuffer(),extension:'webp'})]);
  const magick=available('magick')?'magick':available('convert')?'convert':null;
- if(magick)list.push([magick,(input,{maxSide,quality})=>viaFiles(input,'webp',(from,to)=>run(magick,[from,'-auto-orient','-resize',`${maxSide}x${maxSide}>`,'-quality',String(quality),'webp:'+to]))]);
- if(available('cwebp'))list.push(['cwebp',(input,{maxSide,quality})=>{const size=dimensions(input);const scale=size&&Math.max(size.width,size.height)>maxSide?maxSide/Math.max(size.width,size.height):1;return viaFiles(input,'webp',(from,to)=>run('cwebp',['-quiet','-q',String(quality),...(scale<1?['-resize',String(Math.round(size.width*scale)),String(Math.round(size.height*scale))]:[]),from,'-o',to]))}]);
- if(process.platform==='darwin'&&available('sips'))list.push(['sips',(input,{maxSide,quality})=>viaFiles(input,'jpg',(from,to)=>run('sips',['-Z',String(maxSide),'-s','format','jpeg','-s','formatOptions',String(quality),from,'--out',to]))]);
+ if(magick)list.push([magick,(input,{maxSide,quality})=>viaFiles(input,'webp',(from,to)=>run(magick,[from,'-auto-orient','-resize',`${maxSide}x${maxSide*TALL}>`,'-quality',String(quality),'webp:'+to]))]);
+ if(available('cwebp'))list.push(['cwebp',(input,{maxSide,quality})=>{const size=dimensions(input);const scale=size?Math.min(1,maxSide/size.width,maxSide*TALL/size.height):1;return viaFiles(input,'webp',(from,to)=>run('cwebp',['-quiet','-q',String(quality),...(scale<1?['-resize',String(Math.round(size.width*scale)),String(Math.round(size.height*scale))]:[]),from,'-o',to]))}]);
+ if(process.platform==='darwin'&&available('sips'))list.push(['sips',(input,{maxSide,quality})=>{const size=dimensions(input);const fit=size&&size.width>maxSide?['--resampleWidth',String(maxSide)]:size&&size.height>maxSide*TALL?['--resampleHeight',String(maxSide*TALL)]:[];return viaFiles(input,'jpg',(from,to)=>run('sips',[...fit,'-s','format','jpeg','-s','formatOptions',String(quality),from,'--out',to]))}]);
  return list;
 }
 async function viaFiles(input,extension,convert){
@@ -60,7 +65,7 @@ export async function prepareImage(file,{maxSide=DEFAULTS.maxSide,quality=DEFAUL
  const filename=path.basename(file);const size=dimensions(original);
  const untouched={buffer:original,filename,contentType:type,width:size?.width,height:size?.height,converter:null};
  if(keep||type==='image/gif')return untouched;
- const oversized=size?Math.max(size.width,size.height)>maxSide:type==='image/avif'?false:true;
+ const oversized=size?oversize(size,maxSide):type==='image/avif'?false:true;
  if(!oversized&&original.length<=300_000&&type!=='image/png')return untouched;
  for(const [name,convert] of tools){
   try{

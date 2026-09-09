@@ -31,6 +31,19 @@ test('small images pass through untouched; oversized ones go through the first w
  assert.deepEqual(converters({sharp:null,available:()=>false}),[]);
  assert.equal(converters({sharp:null,available:name=>name==='cwebp'})[0][0],'cwebp');
 });
+test('tall page captures keep their width; only wide images shrink by width',async()=>{
+ const dir=await fs.mkdtemp('/tmp/rn-upload-tall-');
+ const tall=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xe0,0x00,0x10]),Buffer.from('JFIF\0'),Buffer.alloc(9),Buffer.from([0xff,0xc0,0x00,0x11,0x08,0x1a,0x5e,0x02,0xbc,0x03]),Buffer.alloc(20),Buffer.from([0xff,0xd9])]);
+ assert.deepEqual(dimensions(tall),{width:700,height:6750});
+ const file=path.join(dir,'overview.jpg');await fs.writeFile(file,tall);
+ const kept=await prepareImage(file,{tools:[['boom',()=>{throw new Error('must not run')}]]});
+ assert.equal(kept.converter,null);
+ const wide=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xe0,0x00,0x10]),Buffer.from('JFIF\0'),Buffer.alloc(9),Buffer.from([0xff,0xc0,0x00,0x11,0x08,0x03,0xe8,0x09,0x60,0x03]),Buffer.alloc(20),Buffer.from([0xff,0xd9])]);
+ assert.deepEqual(dimensions(wide),{width:2400,height:1000});
+ const file2=path.join(dir,'wide.jpg');await fs.writeFile(file2,wide);
+ const shrunk=await prepareImage(file2,{tools:[['fake',async()=>({buffer:webp,extension:'webp'})]]});
+ assert.equal(shrunk.converter,'fake');
+});
 test('upload sends the bytes straight to the server and prints the asset id',async()=>{
  const dir=await fs.mkdtemp('/tmp/rn-upload-cli-');
  const received=[];
