@@ -86,8 +86,19 @@ Check `codex mcp get relaynote` (or `codex mcp list`) first. For a new connectio
 
 ```bash
 codex mcp add relaynote --url https://relaynote.dev/mcp
-codex mcp login relaynote --scopes relaynote,offline_access
 ```
+
+Current Codex versions start OAuth during `mcp add`. Inspect its output and keep
+that process running until it succeeds or fails. Do NOT follow a successful add/login
+with another login. Run `codex mcp login relaynote --scopes relaynote,offline_access`
+only if the entry exists but still needs authentication and no login is pending.
+
+Use one browser launch per authorization attempt. When the client or watcher opens
+the browser automatically, do not also run `open`, create another tab, or navigate
+to the printed URL. Open it manually only when automatic opening did not occur.
+Never revisit an old loopback callback URL: its listener may have exited and its
+code is single-use. After a failed or expired attempt, finish that process before
+starting a fresh authorization; preserve successful credentials.
 
 Only when the user requests migrating a static-key configuration to OAuth, use supported remove/add commands after
 confirming the existing entry belongs to Relaynote. Do not echo old header values.
