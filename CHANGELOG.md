@@ -1,3 +1,8 @@
+# 3.1.0
+
+- Report app/skill compatibility at watcher startup and on final decisions without polling or automatic updates.
+- Add `check-update`; validate data-only metadata and install only an explicitly requested pinned revision.
+
 # 3.0.7
 
 - Default server is now `https://relaynote.dev`; setup references and README point there too.
