@@ -62,9 +62,11 @@ key through stdin with `login --api-key-stdin`, never a command argument or chat
 node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions --continuous
 ```
 
-The watcher stops by itself after 24 hours (`--max-hours` to change) or when the
-session expires, and says so with a `relaynote.watch.ended` line; treat that line
-as "nothing pending", not as feedback.
+The watcher stops by itself after 24 hours (`--max-hours` to change), when the
+session expires, or when the reviewer closes the session, and says so with a
+`relaynote.watch.ended` line (`reason`: `timed_out`, `expired` or `session_closed`);
+treat that line as "nothing pending", not as feedback. After `session_closed`, do not
+append to that session; a reopened or new session needs its own watch command.
 
 3. Share the review URL and finish the response. The monitor remains active;
    it emits only changed feedback, without an LLM polling loop.
@@ -103,8 +105,8 @@ node "$CLI" stop WATCHER_ID
 
 The WebSocket stays connected across local wait deadlines without invoking a model; a stop request closes it immediately. Every
 watcher has a lifetime: `--max-hours` (default 24, at most 720) ends it without a
-decision, and the session's expiry ends it too, so detached watchers never pile
-up for weeks. A stdout watcher then emits one `relaynote.watch.ended` line; start
+decision, and the session's expiry or its closure by the reviewer ends it too, so
+detached watchers never pile up for weeks. A stdout watcher then emits one `relaynote.watch.ended` line; start
 the same command again only if a decision is still expected. `status` prunes
 finished records after a week and `stop --all` stops every live watcher. A
 machine restart ends the process; restart the watcher explicitly. The saved fingerprint avoids

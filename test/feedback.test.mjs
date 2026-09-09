@@ -84,3 +84,11 @@ test('a watcher ends at its deadline or at the session expiry without delivering
   const alive=longPoll([at(empty,'t0'),{pending:true,updated_at:'t0'}],{deadline:Date.now()+3600_000});
   assert.equal(await alive.run(),undefined); // ran out of scripted answers, not out of time
 });
+
+test('a closed session ends the watcher with its reason instead of failing',async()=>{
+  const closed=Object.assign(new Error('The reviewer closed this session.'),{ended:'session_closed'});
+  const x=longPoll([at(empty,'t0'),closed]);
+  assert.deepEqual(await x.run(),{ended:'session_closed'});
+  assert.equal(x.events.length,0);
+  assert.equal(x.retries.length,0); // not a transient error: no reconnect attempt
+});

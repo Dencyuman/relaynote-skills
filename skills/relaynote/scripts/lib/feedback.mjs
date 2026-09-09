@@ -62,6 +62,8 @@ export async function observe({sessionId,events='decisions',continuous=false,dea
       review=baseline ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,seconds);
       backoff=0;
     }catch(e){
+      // A closed or expired session is an outcome, not a failure: the watcher reports it and stops.
+      if(typeof e?.ended==='string')return {ended:e.ended};
       if(isFatal(e))throw e;
       if(signal?.aborted)return;
       await onRetry();

@@ -1,5 +1,13 @@
 import {accessToken, AuthError} from './auth.mjs';
 
+/** The server answered 410: this session is gone for watchers. `ended` says why. */
+export class SessionEndedError extends Error {
+  constructor(ended) {
+    super(ended === 'session_closed' ? 'The reviewer closed this session; nothing more will arrive from it.' : 'Session not found or expired.');
+    this.name = 'SessionEndedError'; this.ended = ended;
+  }
+}
+
 async function request(sessionId, path, method = 'GET', signal, bindingId) {
   const {base, token} = await accessToken();
   const response = await fetch(`${base}/api/sessions/${sessionId}/${path}`, {
@@ -8,7 +16,7 @@ async function request(sessionId, path, method = 'GET', signal, bindingId) {
   });
   if ([401,403].includes(response.status)) throw new AuthError('Access denied. Run login again.');
   if (response.status === 404) throw new AuthError('This server does not support WebSocket Hibernation. Upgrade the server.');
-  if (response.status === 410) throw new AuthError('Session not found or expired.');
+  if (response.status === 410) { const body = await response.json().catch(() => ({})); throw new SessionEndedError(body?.error === 'SESSION_CLOSED' ? 'session_closed' : 'expired'); }
   if (!response.ok) throw new Error(`Events unavailable (${response.status})`);
   return {base, data: await response.json()};
 }
@@ -38,7 +46,8 @@ export function eventSource(sessionId, {signal, bindingId, onMode = () => {}} = 
       };
       ws.onclose = event => {
         clearTimeout(timeout); clearInterval(beat); if (socket === ws) socket = undefined;
-        if (event.code === 4001) fatal = new AuthError('Session not found or expired.');
+        if (event.code === 4001) fatal = new SessionEndedError('expired');
+        if (event.code === 4003) fatal = new SessionEndedError('session_closed');
         if (!ready) reject(new Error('WebSocket connection failed')); else notify();
       };
       ws.onerror = () => { ws.close(); if (!ready) { clearTimeout(timeout); reject(new Error('WebSocket connection failed')); } };

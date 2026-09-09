@@ -1,3 +1,10 @@
+# 3.0.6
+
+- A session closed by its reviewer ends the watcher cleanly: the `relaynote.watch.ended`
+  line carries `reason: "session_closed"` and tells the AI to stop appending to it.
+  Previously the 410 surfaced as a failed watcher with an "expired" message.
+- Hub close code 4003 (session closed) is recognised alongside 4001 (expired).
+
 # 3.0.5
 
 - Clarify inline Markdown references versus grouped link blocks (1–10 destinations); check the connected server schema before using grouped links.

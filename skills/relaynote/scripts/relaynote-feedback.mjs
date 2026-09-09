@@ -104,7 +104,7 @@ async function watch(){
     const ended=abort.signal.aborted?'stopped':outcome?.ended??'completed';
     await write(statusPath,{...await read(statusPath),status:ended});
     // Tell a stdout consumer (e.g. a Claude Code Monitor) that nothing is being watched any more.
-    if(delivery==='stdout'&&outcome?.ended)await new Promise((resolve,reject)=>process.stdout.write(JSON.stringify({type:'relaynote.watch.ended',session_id:sessionId,reason:outcome.ended,instruction:outcome.ended==='expired'?'This review session has expired; nothing more will arrive from it.':`This watcher reached its ${maxHours}-hour lifetime and stopped without a decision. If a decision is still expected, start the same watch command again; otherwise nothing is pending.`})+'\n',e=>e?reject(e):resolve()));
+    if(delivery==='stdout'&&outcome?.ended)await new Promise((resolve,reject)=>process.stdout.write(JSON.stringify({type:'relaynote.watch.ended',session_id:sessionId,reason:outcome.ended,instruction:outcome.ended==='expired'?'This review session has expired; nothing more will arrive from it.':outcome.ended==='session_closed'?'The reviewer closed this review session. Stop working on it and do not append to it; a reopened or new session needs its own watch command.':`This watcher reached its ${maxHours}-hour lifetime and stopped without a decision. If a decision is still expected, start the same watch command again; otherwise nothing is pending.`})+'\n',e=>e?reject(e):resolve()));
   }catch(e){await write(statusPath,{...status,status:'failed',error:e.message});throw e}
   finally{await fs.unlink(lockPath).catch(()=>{});process.removeListener('SIGTERM',stop);process.removeListener('SIGINT',stop)}
 }
