@@ -29,6 +29,11 @@ when composing a review or handling feedback. Upload screenshots with
 printed `asset_id` with `append_blocks`; the CLI shrinks the file and sends the
 bytes directly, so nothing large passes through the conversation.
 
+Write one Markdown block per section so each topic has its own comment target.
+Use the block `title` as the section heading, with no Markdown headings in the body.
+Never combine a multi-section report in `create_session.markdown`; append separate
+titled blocks in one call instead.
+
 The default loop is:
 
 1. Call `create_session` to create a private, preparing report. Reuse the same session for revisions.

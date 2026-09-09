@@ -11,6 +11,13 @@ Lead with what changed and what the reviewer should inspect. Include:
 - The checks actually performed and any material limitations.
 - A clear review request: what needs a decision or correction.
 
+One section = one block = one comment target. Put the section name in `title`
+and the prose in `markdown`, without Markdown headings. Separate topics such as
+changes, validation, and questions into distinct blocks; do not split every
+sentence. Omit `create_session.markdown` for multi-section reports and send all
+sections in a single `append_blocks` call. If an older server lacks Markdown
+`title`, use one leading heading per block, never multiple sections in one block.
+
 Use concise Markdown prose. Use a checklist for parallel validation items,
 `form` blocks for specific questions or choices, and `table` blocks when users
 need to add or edit an unknown number of rows. Consult `get_reporting_guide`
