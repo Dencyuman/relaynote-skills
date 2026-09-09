@@ -157,6 +157,7 @@ not a subagent or a detached shell command.
   `--replace-binding` is only for an explicitly requested move to THIS conversation;
   never use it to work around an unexplained conflict. Existing delivery attempts
   are not replayed into the replacement destination.
+- Orca RPC success alone is not delivery: require a satisfied idle result and a matching send receipt with `accepted: true` and the complete byte count. An explicit zero-byte refusal retains the decision and waits locally before retrying; partial or ambiguous writes stop without replay. Each retry revalidates the current decision and binding.
 - Delivery is claimed by final decision ID. Orca waits for the pinned terminal to
   become idle, then checks the current round/decision and server binding before send.
   Queue-capable hosts enqueue to the exact original thread. None starts an agent.

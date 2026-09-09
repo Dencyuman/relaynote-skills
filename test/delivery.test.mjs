@@ -32,7 +32,18 @@ test('Orca revalidates only after idle, then discards without sending',async()=>
  let idle=false,sends=0,checked=0;
  const result=await sendOrca(origin,event(),{identity:async()=>origin.agent,command:async(_,args)=>{
   if(args[1]==='show')return {ok:true,result:{terminal:{...origin,connected:true,writable:true}},_meta:{runtimeId:'r'}};
-  if(args[1]==='wait')idle=true;if(args[1]==='send')sends++;return {ok:true};
+  if(args[1]==='wait'){idle=true;return {ok:true,result:{wait:{handle:origin.handle,condition:'tui-idle',satisfied:true}}}}if(args[1]==='send')sends++;return {ok:true};
  },beforeSend:async()=>{assert(idle);checked++;return false}});
  assert.equal(result,false);assert.equal(checked,1);assert.equal(sends,0);
+});
+
+test('explicit refusal retry validates the same sending claim without reclaiming delivery',async()=>{
+ const f=fixture();let sending=false;
+ const sent=await deliverDecision(event(),{...f,post:async action=>{f.calls.push(action);if(action==='sending')sending=true;return {delivery_id:'receipt',status:sending?'sending':'waiting'}},send:async before=>{assert(await before());assert(await before());return true}});
+ assert(sent);assert.deepEqual(f.calls,['claim','sending','claim','sent']);
+});
+test('refused delivery cannot retry after binding changes',async()=>{
+ const f=fixture();let claims=0;
+ const sent=await deliverDecision(event(),{...f,post:async action=>{if(action==='claim'&&++claims>1)throw new StaleDelivery('replaced');return f.post(action)},send:async before=>{assert(await before());return before()}});
+ assert.equal(sent,false);assert(!f.calls.includes('sent'));
 });

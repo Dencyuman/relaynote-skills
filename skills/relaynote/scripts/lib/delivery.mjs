@@ -23,10 +23,17 @@ export async function deliverDecision(event,{post,snapshot,send}) {
   if(claim.status!=='waiting')return false;
   event.delivery_id=claim.delivery_id;
   const ids={decision_id:event.decision_id,delivery_id:event.delivery_id};
+  let sending=false;
   const beforeSend=async()=>{
     const current=await snapshot();
     if(current.current_round!==event.round || current.latest_review?.id!==event.decision_id)return false;
-    try { await post('sending',ids);return true; }
+    try {
+      if(sending){
+        const currentClaim=await post('claim',{decision_id:event.decision_id});
+        return currentClaim.delivery_id===event.delivery_id&&currentClaim.status==='sending';
+      }
+      await post('sending',ids);sending=true;return true;
+    }
     catch(error) { if(error instanceof StaleDelivery)return false;throw error; }
   };
   try {

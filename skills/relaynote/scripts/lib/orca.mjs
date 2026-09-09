@@ -1,5 +1,6 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {setTimeout as delay} from 'node:timers/promises';
 const exec=promisify(execFile);
 const run=async(command,args,timeout=10000)=>{try{return JSON.parse((await exec(command,args,{timeout,maxBuffer:2*1024*1024})).stdout)}catch(e){if(e.stdout){try{return JSON.parse(e.stdout)}catch{}}throw new Error('Orca command failed; delivery was not retried')}};
 async function processIdentity(pid){
@@ -29,7 +30,7 @@ export async function captureOrca(){
   if(!/(^|\/)codex$/.test(p.command))throw new Error('Originating Codex process not found');
   return {...origin,agent:p};
 }
-export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal,beforeSend=async()=>true}={}){
+export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal,beforeSend=async()=>true,pause=()=>delay(1000,undefined,{signal})}={}){
   const verify=async()=>{
     const p=await identity(origin.agent.pid);
     if(p.started!==origin.agent.started||p.command!==origin.agent.command)throw new Error('Originating Codex process changed');
@@ -39,6 +40,9 @@ export async function sendOrca(origin,event,{command=run,identity=processIdentit
     await verify();
     const idle=await command(origin.command,['terminal','wait','--terminal',origin.handle,'--for','tui-idle','--timeout-ms','5000','--json'],10000);
     if(!idle.ok){if(idle.error?.code==='timeout')continue;throw new Error('Cannot wait for the originating Orca terminal')}
+    const wait=idle.result?.wait;
+    if(wait?.handle!==origin.handle||wait.condition!=='tui-idle'||wait.satisfied!==true)
+      throw new Error('Originating Orca terminal is blocked or its idle result is invalid; no input was sent');
     await verify();
     await command(origin.command,['terminal','read','--terminal',origin.handle,'--limit','1','--json']);
     if(signal?.aborted)return;
@@ -46,6 +50,15 @@ export async function sendOrca(origin,event,{command=run,identity=processIdentit
     const message=`[Relaynote CLI automatic notification] Event ${event.event_id}; server ${event.server_url}; session ${event.session_id}; round ${event.round}; originating thread ${origin.thread}; decision_id ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
     const result=await command(origin.command,['terminal','send','--terminal',origin.handle,'--text',message,'--enter','--json'],30000);
     if(!result.ok)throw new Error('Orca delivery outcome unknown; inspect the original conversation before retrying');
+    const sent=result.result?.send;
+    if(sent?.handle===origin.handle&&sent.accepted===false&&sent.bytesWritten===0){
+      // A successful RPC can explicitly refuse input (for example, a mobile input lock).
+      // No bytes were written: retain this decision and revalidate before retrying.
+      await pause();
+      continue;
+    }
+    if(sent?.handle!==origin.handle||sent.accepted!==true||!Number.isSafeInteger(sent.bytesWritten)||sent.bytesWritten<Buffer.byteLength(message,'utf8'))
+      throw new Error('Orca delivery outcome unknown; inspect the original conversation before retrying');
     return true;
   }
   return false;
