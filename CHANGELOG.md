@@ -1,3 +1,7 @@
+# 3.0.7
+
+- Default server is now `https://relaynote.dev`; setup references and README point there too.
+
 # 3.0.6
 
 - A session closed by its reviewer ends the watcher cleanly: the `relaynote.watch.ended`

@@ -1,9 +1,9 @@
 # Connect Relaynote
 
-Default endpoint (use the explicit origin in the onboarding prompt if different): `https://relaynote.dencyu.co.jp/mcp`.
-Onboarding: `https://relaynote.dencyu.co.jp/app/onboarding`.
+Default endpoint (use the explicit origin in the onboarding prompt if different): `https://relaynote.dev/mcp`.
+Onboarding: `https://relaynote.dev/app/onboarding`.
 Settings, including Google linking and AI connection revocation:
-`https://relaynote.dencyu.co.jp/app?view=settings`.
+`https://relaynote.dev/app?view=settings`.
 
 ## Inspect before changing
 
@@ -85,7 +85,7 @@ notifications must never launch or resume a replacement agent process.
 Check `codex mcp get relaynote` (or `codex mcp list`) first. For a new connection:
 
 ```bash
-codex mcp add relaynote --url https://relaynote.dencyu.co.jp/mcp
+codex mcp add relaynote --url https://relaynote.dev/mcp
 codex mcp login relaynote --scopes relaynote,offline_access
 ```
 
@@ -104,7 +104,7 @@ only if necessary to discover the tools; ask the user to resume afterward.
 Check `claude mcp list`, then add if missing:
 
 ```bash
-claude mcp add --transport http --scope user relaynote https://relaynote.dencyu.co.jp/mcp
+claude mcp add --transport http --scope user relaynote https://relaynote.dev/mcp
 ```
 
 Use `/mcp` to select Relaynote and authenticate. The slash menu may require the
@@ -120,7 +120,7 @@ Inspect the selected scope: `.cursor/mcp.json` for a project, or
 ```json
 {
   "relaynote": {
-    "url": "https://relaynote.dencyu.co.jp/mcp"
+    "url": "https://relaynote.dev/mcp"
   }
 }
 ```

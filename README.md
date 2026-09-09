@@ -1,6 +1,6 @@
 # Relaynote skills
 
-Official agent skill for [Relaynote](https://relaynote.dencyu.co.jp), maintained by DENCYU Inc.
+Official agent skill for [Relaynote](https://relaynote.dev), maintained by DencyuSystems
 Share AI work as review sessions and receive contextual comments, answers, and approvals.
 
 ```bash
