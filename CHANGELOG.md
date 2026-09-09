@@ -1,3 +1,11 @@
+# 3.0.4
+
+- Identify the pinned watcher binding in signed WebSocket tickets so Relaynote can
+  show real CLI presence before a review decision. Browser subscriptions do not
+  count as CLI connections.
+- Keep Hibernation-only transport and the existing conversation adapters.
+- Requires the server's progress/presence update for the new connection display.
+
 # 3.0.3
 
 - `stop` verifies a watcher by its command line (`relaynote-feedback.mjs watch <session>`) rather than by the CLI's own path, so watchers started from an installed copy of the skill can be stopped from the repository copy and vice versa; `stop --all` reports the ones it could not verify instead of aborting.

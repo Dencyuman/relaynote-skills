@@ -68,7 +68,7 @@ async function watch(){
   const status={id,sessionId,delivery,events,thread:delivery==='orca'?origin.thread:['codex','http','bridge'].includes(delivery)?thread:undefined,origin,pid:process.pid,startedAt:new Date().toISOString(),status:'waiting',mode:'websocket',maxHours,endsAt:new Date(deadline).toISOString()};
   try{
     await write(statusPath,status);
-    const source=eventSource(sessionId,{signal:abort.signal,onMode:async mode=>{status.mode=mode;await write(statusPath,{...await read(statusPath),mode})}});
+    const source=eventSource(sessionId,{bindingId:id,signal:abort.signal,onMode:async mode=>{status.mode=mode;await write(statusPath,{...await read(statusPath),mode})}});
     const post=deliveryClient(sessionId,id,auth.base);
     let bound=false,outcome;
     try {

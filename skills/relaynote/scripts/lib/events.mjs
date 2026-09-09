@@ -1,9 +1,9 @@
 import {accessToken, AuthError} from './auth.mjs';
 
-async function request(sessionId, path, method = 'GET', signal) {
+async function request(sessionId, path, method = 'GET', signal, bindingId) {
   const {base, token} = await accessToken();
   const response = await fetch(`${base}/api/sessions/${sessionId}/${path}`, {
-    method, headers: {Authorization: `Bearer ${token}`}, redirect: 'error',
+    method, headers: {Authorization: `Bearer ${token}`, ...(bindingId ? {'X-Relaynote-Binding': bindingId} : {})}, redirect: 'error',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(35000)]) : AbortSignal.timeout(35000),
   });
   if ([401,403].includes(response.status)) throw new AuthError('Access denied. Run login again.');
@@ -14,13 +14,13 @@ async function request(sessionId, path, method = 'GET', signal) {
 }
 
 /** A single connection, coalesced notifications, and D1 snapshots after each wake. */
-export function eventSource(sessionId, {signal, onMode = () => {}} = {}) {
+export function eventSource(sessionId, {signal, bindingId, onMode = () => {}} = {}) {
   let socket, opening, timer, beat, wake, dirty = false, failures = 0, retryAt = 0, fatal;
   const snapshot = async () => {const data=(await request(sessionId, 'snapshot', 'GET', signal)).data;if(data.session_id!==sessionId)throw new AuthError('Session snapshot mismatch; delivery stopped');return data;};
   const notify = () => { dirty = true; wake?.(); };
   const close = () => { clearInterval(beat); clearTimeout(timer); if (socket) { socket.onclose = null; socket.close(); socket = undefined; } wake?.(); };
   const connect = async () => {
-    const {base,data} = await request(sessionId, 'events-ticket', 'POST', signal);
+    const {base,data} = await request(sessionId, 'events-ticket', 'POST', signal, bindingId);
     if (signal?.aborted) return;
     await new Promise((resolve,reject) => {
       const url = new URL(`/api/sessions/${sessionId}/events`, base); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
