@@ -52,7 +52,22 @@ The default loop is:
    replaced, append the fixes and screenshots, await all uploads, then
    `publish_session(session_id, round)` with the new round. Retries must reuse the
    same expected round, not repeatedly increment it. Published content is immutable.
-6. Approval closes the review. Do not reopen it just to say thanks.
+6. Approval completes the current round, not necessarily the task or session.
+   If authorized next work remains, do it and report back through Relaynote.
+
+## Keep the conversation in Relaynote
+
+Once feedback arrives through Relaynote, keep substantive replies, answers,
+questions, and subsequent work reports in that SAME Relaynote session until the
+owner closes it or explicitly asks to switch channels. A chat-only reply does not
+fulfil the response. Chat may contain a brief status and the review URL.
+Approval is permission to continue the already-authorized next work, not a reason
+to stop after acknowledging it; it does not authorize unrelated work. For the next
+report in an open session, call `begin_revision` with the current round, append
+separate titled blocks, publish, and keep/rearm this conversation's watcher.
+Do not create another session merely because a round was approved. If nothing
+remains, do not create a new round solely to say thanks. Never reopen an owner-closed
+session automatically.
 
 Protocol 3 requires updated MCP tools and watcher together. If publication or
 receipt tools are absent, reload MCP preserving this conversation. Do not fall

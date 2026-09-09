@@ -64,3 +64,18 @@ quota. The upload needs the `relaynote:upload` scope, which the watcher login
 requests alongside the read-only events scope; a 403 means the stored login
 predates it - run login again. Fall back to `upload_image` (inline Base64) only
 when the CLI cannot run, and downscale first.
+
+## Reply where the feedback arrived
+
+Relaynote feedback establishes Relaynote as the response channel until the owner
+closes the session or explicitly changes that instruction. Read and acknowledge
+the exact decision, then answer its questions or perform its authorized next work.
+Publish the substantive response in the same session; a terminal/chat answer alone
+is insufficient. Keep any chat response to a brief status and link.
+
+An approved round is not an owner-closed session. If the session is still open and
+next work or an answer is due, use `begin_revision(session_id, current_round)`, add
+the response as titled blocks, `publish_session`, and keep/rearm the watcher for
+this same AI conversation. If no work or question remains, do not manufacture a
+new round for an acknowledgement. If the owner closed the session, stop the loop;
+do not reopen or create a replacement session without their instruction.
