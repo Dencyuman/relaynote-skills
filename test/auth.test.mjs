@@ -36,3 +36,29 @@ test('OAuth callback waits for token storage and separates success, failure, den
   assert.equal(tokenRequests,2);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(home,{recursive:true,force:true});}
 });
+
+test('an account subject is stored only when the server itself supplies one',async()=>{
+ const jwt=header=>[Buffer.from('{"alg":"none"}').toString('base64url'),Buffer.from(JSON.stringify(header)).toString('base64url'),''].join('.');
+ let base,mode='jwt',userinfo=0;
+ const server=http.createServer(async(req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  if(req.url.startsWith('/.well-known/'))return res.end(JSON.stringify({authorization_endpoint:base+'/authorize',token_endpoint:base+'/token',registration_endpoint:base+'/register',...(mode==='userinfo'?{userinfo_endpoint:base+'/userinfo'}:{})}));
+  if(req.url==='/userinfo'){userinfo++;return res.end(JSON.stringify({sub:'user-from-userinfo'}));}
+  let body='';for await(const chunk of req)body+=chunk;
+  if(req.url==='/register')return res.end(JSON.stringify({client_id:'test-client'}));
+  if(req.url==='/token')return res.end(JSON.stringify({access_token:mode==='jwt'?jwt({sub:'user-from-jwt'}):'opaque-token',expires_in:3600}));
+  res.statusCode=404;res.end('{}');
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;
+ // The callback response is held until the token exchange finishes, so never await that fetch here.
+ const connect=()=>login(base,{open:false,onUrl:value=>{const url=new URL(value);fetch(url.searchParams.get('redirect_uri')+'?'+new URLSearchParams({state:url.searchParams.get('state'),code:'test-code'}),{redirect:'manual'}).catch(()=>{})}});
+ try{
+  await connect();
+  assert.equal((await credentials()).subject,'user-from-jwt');assert.equal(userinfo,0);
+  mode='userinfo';await connect();
+  assert.equal((await credentials()).subject,'user-from-userinfo');assert.equal(userinfo,1);
+  mode='opaque';await connect();
+  assert.equal((await credentials()).subject,undefined);
+  assert.equal((await credentials()).clientId,'test-client');
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(home,{recursive:true,force:true});}
+});

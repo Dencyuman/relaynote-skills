@@ -2,7 +2,10 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 const exec=promisify(execFile);
-const run=async(command,args,timeout=10000)=>{try{return JSON.parse((await exec(command,args,{timeout,maxBuffer:2*1024*1024})).stdout)}catch(e){if(e.stdout){try{return JSON.parse(e.stdout)}catch{}}throw new Error('Orca command failed; delivery was not retried')}};
+// The original failure is kept as `cause` and summarised in the message; without it every Orca
+// problem (missing CLI, timeout, non-JSON output) looked identical in the watcher log.
+const detail=e=>[e?.message,String(e?.stderr??'').trim()].filter(Boolean).join(' | ').replace(/\s+/g,' ').slice(0,300);
+const run=async(command,args,timeout=10000)=>{try{return JSON.parse((await exec(command,args,{timeout,maxBuffer:2*1024*1024})).stdout)}catch(e){if(e.stdout){try{return JSON.parse(e.stdout)}catch{}}throw new Error(`Orca command failed; delivery was not retried: ${command} ${args[0]??''} ${args[1]??''}: ${detail(e)}`,{cause:e})}};
 async function processIdentity(pid){
   const {stdout}=await exec('ps',['-p',String(pid),'-o','pid=,ppid=,lstart=,comm=']);
   const match=stdout.trim().match(/^(\d+)\s+(\d+)\s+(.+?)\s+(\S+)$/);

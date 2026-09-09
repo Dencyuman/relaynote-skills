@@ -31,6 +31,11 @@ create an API key for this flow.
    as described in feedback.md. Use `login --device --server ORIGIN` when the user is on a phone or the computer is remote. Explain why a second browser authorization appears:
    the AI client and the watcher each have their own access grant. Both must use the
    SAME Relaynote account as the onboarding page. Never copy the AI client's tokens.
+   `login` first checks the stored grant: when a valid grant for the same ORIGIN
+   already exists it reports "Already connected to ORIGIN (scope …)" and exits 0 —
+   reuse it, do not force a re-login, and do not stop another conversation's watcher.
+   It refuses only a different-origin grant or a switch from OAuth to an API key
+   while watchers are live.
 4. Create a short test review through MCP, finish all uploads, and call
    `publish_session(session_id, round)`. Configure a supported watcher for the
    current conversation, then finish the response and let the user submit final approval or request changes.
@@ -59,8 +64,10 @@ For Codex CLI, retain the exact current `CODEX_THREAD_ID`. If installed
 `codex resume --help` supports it, tell the user to exit the CLI and run
 `codex resume EXACT_THREAD_ID` in the same project. For an embedded client, use its
 own reload/reopen UI; do not start a second standalone Codex as a substitute.
-For Claude Code, use `/mcp` to authenticate/reconnect first; if a full restart is
-needed, use its supported conversation resume mechanism after checking help.
+For Claude Code, reload via `/mcp` first; if tools are still missing, retain the
+exact `CLAUDE_CODE_SESSION_ID` and have the user exit and run
+`claude --resume EXACT_SESSION_ID` in the same directory, after confirming the flag
+in `claude --help`.
 For Cursor, try the MCP settings reconnect/reload action first and retain the
 current conversation when restarting. Do not invent one universal restart command.
 
@@ -118,10 +125,16 @@ Check `claude mcp list`, then add if missing:
 claude mcp add --transport http --scope user relaynote https://relaynote.dev/mcp
 ```
 
-Use `/mcp` to select Relaynote and authenticate. The slash menu may require the
-user's interaction; explain this single step. Do not claim a shell command can
-operate an interactive slash menu. Only for a requested OAuth migration, remove an old static-key entry through the
-client's supported commands before re-adding, preserving other servers.
+Check `claude mcp login --help` for `mcp login`. When it is present, authenticate
+from inside this conversation with `script -q /dev/null claude mcp login relaynote`
+— a pty is required, since `claude mcp login` refuses when stdin is not a terminal;
+add `--no-browser` to print the URL instead of opening one, for SSH/headless setups.
+On versions without `mcp login`, ask the user to run `/mcp`, select Relaynote and
+authenticate; that menu needs the user's interaction, and no shell command can drive
+it. A server added mid-session is not loaded into the running conversation: ask the
+user to run `/mcp` once to reload, retry tool discovery, and only then consider a
+restart. Only for a requested OAuth migration, remove an old static-key entry through
+the client's supported commands before re-adding, preserving other servers.
 
 ## Cursor
 
@@ -224,7 +237,11 @@ Honor those choices instead of the OAuth defaults above. MCP supports browser OA
 or an API key; the watcher supports browser OAuth (`login`), Device OAuth
 (`login --device`), or an API key (`login --api-key-stdin`). Do not start a second
 OAuth flow for a connection selected as API key. Device OAuth here authorizes the
-watcher, not the MCP client's connection.
+watcher, not the MCP client's connection. Re-running `login` for an already-connected
+ORIGIN is a safe no-op (see the walkthrough above): it reports "Already connected" and
+exits 0 instead of restarting OAuth or disturbing another conversation's watcher; it
+refuses only a different-origin grant or an OAuth-to-API-key switch while watchers
+are live.
 
 When the user explicitly supplies an onboarding-issued key in the handoff, configure
 only the connections selected as API key with it. Store it using the client's secure

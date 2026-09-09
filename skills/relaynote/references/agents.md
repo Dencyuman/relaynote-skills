@@ -2,13 +2,16 @@
 
 ## Resolve the current environment
 
-Onboarding selects a brand, not a runtime. Detect the environment of THIS conversation before choosing an adapter. Codex includes Orca: use `orca` only when `ORCA_TERMINAL_HANDLE` identifies this conversation; otherwise inspect `codex`. Cursor uses `cursor-cli` in its terminal environment and `cursor` for its editor hook. Cline's resume recipe targets its CLI API, not the editor extension. For every brand, inspect the adapter prerequisites and official reference before configuring it. Do not ask the user to classify CLI/TUI/ACP environments or present these as separate products. If detection is inconclusive, ask only for the missing environment information. Unsupported environments must not fall back to polling or launch another conversation.
+Onboarding selects a brand, not a runtime. Detect the environment of THIS conversation before choosing an adapter. `orca` is the adapter for Codex running inside an Orca terminal: select it only when BOTH `ORCA_TERMINAL_HANDLE` and `CODEX_THREAD_ID` identify this conversation. If `CLAUDECODE` or `CLAUDE_CODE_SESSION_ID` is set, the host is Claude Code even inside an Orca terminal — use `claude-code`; being in an Orca terminal does not by itself make the host Codex. Otherwise inspect `codex`. Cursor uses `cursor-cli` in its terminal environment and `cursor` for its editor hook. Cline's resume recipe targets its CLI API, not the editor extension. For every brand, inspect the adapter prerequisites and official reference before configuring it. Do not ask the user to classify CLI/TUI/ACP environments or present these as separate products. If detection is inconclusive, ask only for the missing environment information. Unsupported environments must not fall back to polling or launch another conversation.
 
 # Host adapters
 
 Use `node "$CLI" describe HOST` to get the host, installation target, delivery family,
-and official reference. `agents` lists the registry. Product brand and actual host are
-separate: Cursor IDE is `cursor`, its terminal is `cursor-cli`; Zed is an ACP host.
+and official reference; `describe HOST` is the explicit form. Run `node "$CLI" describe`
+with no argument to auto-detect the host from this environment; it prints
+`{detected, reason, adapter, hosts}`. `agents` lists the registry. Product brand and
+actual host are separate: Cursor IDE is `cursor`, its terminal is `cursor-cli`; Zed is
+an ACP host.
 
 ## Required transport
 

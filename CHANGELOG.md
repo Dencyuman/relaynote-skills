@@ -1,3 +1,26 @@
+# 3.2.0
+
+- Re-running `login` for the server already connected prints the connection and changes nothing, so a
+  same-origin re-login no longer requires stopping other conversations' watchers: they keep running and
+  pick up rotated tokens themselves. `--force` reauthorizes; switching servers, or replacing OAuth with
+  an API key, still refuses while watchers are live.
+- `COMMAND --help` prints that command's usage before any side effect, and the banner is the same blocks
+  joined; an unknown command prints it on stderr and exits 1.
+- `describe` without a host id detects the originating host from this process environment and prints the
+  detection; an unknown id lists the valid ones instead of just "Unknown host".
+- `status` lists live watchers as a table; `--all` adds finished records and `--json` prints every stored
+  field. Records carry `endedAt`, and a finished record with no usable timestamp is now pruned instead of
+  surviving the week-old comparison forever.
+- A stdout watcher emits `relaynote.watch.started` once its binding exists, so later silence means a
+  waiting watcher rather than an unknown one.
+- Watcher status writes merge into the stored record, so a concurrent field is never dropped.
+- MCP, Orca and HTTP adapter failures keep the original error as `cause` and name it in the message;
+  `RELAYNOTE_DEBUG` prints stacks. `--delivery http` reports a missing, unreadable or invalid
+  `--adapter-file` by path.
+- `--events feedback` is normalized to `decisions` with a deprecation warning; any other value is refused
+  instead of silently ignored.
+- `login` records the account `subject` in `auth.json` when the server hands one over.
+
 # 3.1.0
 
 - Report app/skill compatibility at watcher startup and on final decisions without polling or automatic updates.

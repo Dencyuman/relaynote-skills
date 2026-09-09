@@ -62,6 +62,10 @@ key through stdin with `login --api-key-stdin`, never a command argument or chat
 node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions --continuous
 ```
 
+The watch command confirms binding with a first `relaynote.watch.started` JSON line;
+treat that line as "nothing pending" too, not as feedback. `status` (no flags) lists
+only live watchers; pass `--all` or `--json` to include finished ones.
+
 The watcher stops by itself after 24 hours (`--max-hours` to change), when the
 session expires, or when the reviewer closes the session, and says so with a
 `relaynote.watch.ended` line (`reason`: `timed_out`, `expired` or `session_closed`);

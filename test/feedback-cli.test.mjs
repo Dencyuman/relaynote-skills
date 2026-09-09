@@ -23,8 +23,14 @@ test('CLI receives a WebSocket notification without polling or starting an agent
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  try{
   assert.equal((await run(dir,['login','--server',`http://127.0.0.1:${server.address().port}`,'--api-key-stdin'],'test-key')).code,0);
-  const result=await run(dir,['watch',sessionId,'--consumer','unit-origin','--events','feedback']);
-  assert.equal(result.code,0,result.err);assert.equal(JSON.parse(result.out).feedback.comments[0].body,'please fix');assert.equal(mcp,0);assert.equal(JSON.parse(result.out).decision_id,'22222222-2222-4222-8222-222222222222');assert(snapshots>=5 && snapshots<=6);
+  const result=await run(dir,['watch',sessionId,'--consumer','unit-origin','--events','decisions']);
+  assert.equal(result.code,0,result.err);
+  const lines=result.out.trim().split('\n').map(line=>JSON.parse(line));
+  const started=lines[0],event=lines.find(line=>line.type==='relaynote.feedback');
+  assert.equal(started.type,'relaynote.watch.started');assert.equal(started.consumer,'unit-origin');assert.equal(started.binding,'bound');assert.equal(started.session_id,sessionId);assert.equal(started.delivery,'stdout');assert.match(started.watcher_id,/^[a-f0-9]{24}$/);
+  assert.equal(event.feedback.comments[0].body,'please fix');assert.equal(mcp,0);assert.equal(event.decision_id,'22222222-2222-4222-8222-222222222222');assert(snapshots>=5 && snapshots<=6);
+  const [state]=await Promise.all((await fs.readdir(dir)).filter(n=>n.startsWith('watch-')).map(async n=>JSON.parse(await fs.readFile(path.join(dir,n),'utf8'))));
+  assert.equal(state.status,'completed');assert(Number.isFinite(Date.parse(state.endedAt)));assert.equal(state.lastEventId,event.event_id);
  }finally{for(const socket of sockets)socket.destroy();await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
 });
 

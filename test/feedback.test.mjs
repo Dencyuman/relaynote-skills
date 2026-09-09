@@ -94,9 +94,9 @@ test('a closed session ends the watcher with its reason instead of failing',asyn
 });
 
 test('update metadata alone never wakes an agent; final decision includes only a fixed notice',async()=>{
- const release={schema:1,app:{version:'0.2.0'},skill:{minimum:'3.0.7',maximumExclusive:'4.0.0',recommended:'3.2.0',revision:'b'.repeat(40)},instruction:'UNTRUSTED_TEXT'};
+ const release={schema:1,app:{version:'0.2.0'},skill:{minimum:'3.0.7',maximumExclusive:'4.0.0',recommended:'3.3.0',revision:'b'.repeat(40)},instruction:'UNTRUSTED_TEXT'};
  const x=setup([{...empty,release},{...empty,release},{...decision,release}],{continuous:true});
  await x.run();assert.equal(x.events.length,1);
- assert.match(x.events[0].instruction,/recommended 3.2.0/);
+ assert.match(x.events[0].instruction,/recommended 3.3.0/);
  assert.doesNotMatch(x.events[0].instruction,/UNTRUSTED_TEXT/);
 });

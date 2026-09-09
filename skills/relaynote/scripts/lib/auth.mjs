@@ -9,6 +9,19 @@ export class AuthError extends Error {}
 async function post(url,body,form=false){const r=await fetch(url,{method:'POST',headers:{'Content-Type':form?'application/x-www-form-urlencoded':'application/json'},body:form?new URLSearchParams(body):JSON.stringify(body),signal:AbortSignal.timeout(20000),redirect:'error'});if(r.status>=500||r.status===429)throw new Error('Authentication service temporarily unavailable');if(!r.ok)throw new AuthError(`Authentication failed (${r.status}); run login again`);return r.json()}
 function sameOrigin(url,base){if(new URL(url).origin!==base)throw new Error('Unexpected OAuth endpoint');return url;}
 let refreshing;
+// Account identity for later "is this the same account" checks. Only what the server itself hands
+// over: the token response, a JWT `sub` inside the access token, or a userinfo endpoint published in
+// OAuth discovery. Nothing is guessed. // TODO subject: this server publishes no userinfo endpoint
+// today, so a non-JWT token leaves clientId+base as the only account identifiers.
+const jwtSubject=token=>{const parts=String(token??'').split('.');if(parts.length!==3)return undefined;
+ try{const claims=JSON.parse(Buffer.from(parts[1],'base64url').toString('utf8'));return typeof claims.sub==='string'&&claims.sub?claims.sub:undefined}catch{return undefined}};
+async function subjectOf(token,meta,base){
+ if(typeof token.sub==='string'&&token.sub)return token.sub;
+ const fromToken=jwtSubject(token.access_token);if(fromToken)return fromToken;
+ if(!meta.userinfo_endpoint)return undefined;
+ try{const r=await fetch(sameOrigin(meta.userinfo_endpoint,base),{headers:{Authorization:`Bearer ${token.access_token}`},signal:AbortSignal.timeout(10000),redirect:'error'});
+  if(!r.ok)return undefined;const info=await r.json();return [info.sub,info.id,info.user_id].find(v=>typeof v==='string'&&v)}catch{return undefined}
+}
 // Read-only events plus the upload-only scope: the watcher can store report images but never write anything else.
 const watcherScope=meta=>{const supported=name=>meta.scopes_supported?.includes(name);return [supported('relaynote:events')?'relaynote:events':'relaynote',...(supported('relaynote:upload')?['relaynote:upload']:[]),'offline_access'].join(' ')};
 export async function credentials(){return read(file).catch(()=>{throw new AuthError('Run relaynote login first')})}
@@ -39,7 +52,8 @@ export async function login(base,{open=true,onUrl}={}){
   if(onUrl)await onUrl(url.href);else console.log(`Authorize Relaynote in your browser:\n${url.href}`);
   if(open){const command=process.platform==='darwin'?'open':process.platform==='win32'?null:'xdg-open';if(command){const p=spawn(command,[url.href],{stdio:'ignore'});p.on('error',()=>{});p.unref()}}
   const t=await post(meta.token_endpoint,{grant_type:'authorization_code',client_id:client.client_id,redirect_uri:redirect,code:await code,code_verifier:verifier,resource:base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');
-  await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope});
+  const subject=await subjectOf(t,meta,base);
+  await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});
   await complete('connected');
  }catch(error){await complete(error.message==='Authorization denied'?'denied':'failed');throw error;}finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
@@ -62,7 +76,7 @@ export async function deviceLogin(base,{onUrl}={}) {
   await new Promise(resolve=>setTimeout(resolve,interval));
   const response=await fetch(meta.token_endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:device_code',client_id:client.client_id,device_code:device.device_code,resource:base+'/mcp'}),signal:AbortSignal.timeout(20000),redirect:'error'});
   const t=await response.json();
-  if(response.ok && t.access_token){await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope});return;}
+  if(response.ok && t.access_token){const subject=await subjectOf(t,meta,base);await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});return;}
   if(t.error==='authorization_pending')continue;
   if(t.error==='slow_down'){interval+=5000;continue;}
   throw new AuthError(`Device authorization ${t.error||'failed'}`);

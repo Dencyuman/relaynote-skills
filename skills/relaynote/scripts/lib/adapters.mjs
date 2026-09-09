@@ -35,7 +35,7 @@ export function renderAdapter(config,thread,event) {
 }
 export async function deliverHttp(config,thread,event) {
   const {url,options}=renderAdapter(config,thread,event);
-  let response;try{response=await fetch(url,options)}catch{throw new Error('Delivery outcome unknown. Inspect the original conversation before retrying.');}
+  let response;try{response=await fetch(url,options)}catch(e){throw new Error(`Delivery outcome unknown. Inspect the original conversation before retrying. (${String(e?.message??e).slice(0,200)})`,{cause:e});}
   if(!response.ok)throw new Error(`Adapter delivery failed (${response.status}). No replacement conversation was created.`);
 }
 export function adapterTemplate(host,thread,endpoint) {
