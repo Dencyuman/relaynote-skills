@@ -1,3 +1,4 @@
+import {updateMessage} from './updates.mjs';
 import crypto from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
 
@@ -82,6 +83,8 @@ export async function observe({sessionId,events='decisions',continuous=false,dea
     // form edits remain in the report until the reviewer submits their decision.
     if(hasFeedback(current) && state?.decisionId!==current.decision.id && !(state?.hash===hash && !state?.decisionId)) {
       const event=eventFor(sessionId,current);
+      const notice=updateMessage(review.release);
+      if(notice)event.instruction += `\n${notice}`;
       const delivered=await deliver(event); // Fail closed on ambiguous delivery; never silently replay it.
       await commit({round:current.round,hash,decisionId:current.decision.id,lastEventId:event.event_id});
       if(!continuous && delivered!==false)return event;

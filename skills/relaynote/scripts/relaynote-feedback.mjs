@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {checkUpdates,updateInfo,updateMessage} from './lib/updates.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
@@ -76,7 +77,9 @@ async function watch(){
     if(initial.delivery_protocol!==3)throw new Error('Upgrade Relaynote: final-decision delivery receipts (protocol 3) are required');
     await post('bind',{adapter:delivery,replace:flag('replace-binding')});bound=true;
     await source.ready();
-    if(process.send){process.send({ready:true,id,pid:process.pid});process.disconnect()}
+    const update=updateInfo(initial.release);
+    const notice=updateMessage(initial.release);if(notice)console.error(notice);
+    if(process.send){process.send({ready:true,id,pid:process.pid,skillUpdate:update});process.disconnect()}
     outcome=await observe({sessionId,events,continuous:flag('continuous'),deadline,signal:abort.signal,
       getReview:async id=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return source.snapshot()},
       waitForChange:async(id,since,seconds)=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return source.wait(id,since,seconds)},
@@ -118,6 +121,7 @@ try{
     case 'bind':await bindHook(option('host'),option('thread'),args[0]);console.log('Review bound to the originating hook conversation');break;
     case 'hook':await runHook(option('host'),entry);break;
     case '--version':console.log(VERSION);break;
+    case 'check-update':console.log(JSON.stringify(await checkUpdates(option('server') || (await credentials()).base)));break;
     case 'login':{
       if((await statuses()).some(s=>s.status==='waiting'&&alive(s.pid)))throw new Error('Stop active watchers before changing authentication');
       if(flag('api-key-stdin')){let key='';for await(const b of process.stdin)key+=b;await apiKeyLogin(endpoint(option('server')),key)}else if(flag('device'))await deviceLogin(endpoint(option('server')));else await login(endpoint(option('server')),{open:!flag('no-open')});console.log('Relaynote connected');break;
@@ -147,6 +151,6 @@ try{
       if(flag('all')){let n=0;const skipped=[];for(const state of await statuses()){if(state.status!=='waiting')continue;try{if(await stopWatcher(state.id))n++}catch(e){skipped.push(`${state.id}: ${e.message}`)}}console.log(`Stop requested for ${n} watcher(s)`);for(const line of skipped)console.error(line);break;}
       await stopWatcher(args[0]);console.log('Stop requested');break;
     }
-    default:console.log('Relaynote feedback bridge 3.0.3\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID] [--max-hours 24]\nstart SESSION --delivery orca [--events decisions] [--continuous] [--max-hours 24]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID | stop --all\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
+    default:console.log('Relaynote feedback bridge\ncheck-update [--server ORIGIN]\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID] [--max-hours 24]\nstart SESSION --delivery orca [--events decisions] [--continuous] [--max-hours 24]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID | stop --all\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
   }
 }catch(e){console.error(e.message);process.exitCode=1}
