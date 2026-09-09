@@ -60,3 +60,24 @@ starts with `begin_revision` and is explicitly published after uploads complete.
 Upgrade the server and skill together. Old servers are rejected by the 3.0 CLI;
 there is no polling fallback. `npx skills update` updates installed skills from
 their source. Use the repository's release tag when a fixed version is needed.
+
+
+## Notify Relaynote after a release
+
+Publishing a stable GitHub Release (`vX.Y.Z`, not a prerelease/draft) runs
+`.github/workflows/notify-relaynote.yml`. It dispatches the tag to
+`Dencyuman/relaynote` for compatibility checks and a recommendation-update PR.
+Pushing a tag without publishing a Release does not notify the app.
+
+Install the receiver workflow in Relaynote first. Set the repository Actions
+secret `RELAYNOTE_AUTOMATION_TOKEN` to a dedicated fine-grained token with
+Contents read/write on `Dencyuman/relaynote` (the receiver also needs Pull requests
+read/write). Do not put a personal token in source or release notes. This workflow
+executes no released skill code and only sends a validated tag to the fixed repo.
+
+The receiver validates the published release, resolves and pins its commit, tests
+both projects and the version API/CLI contract, and preserves the supported range
+and app version. Unsupported versions or failures require manual review; they do
+not update production. Retry with the workflow's manual `tag` input after resolving
+the failure. Check the receiving **Skill release compatibility** workflow as well:
+a successful dispatch means accepted delivery, not successful compatibility tests.
