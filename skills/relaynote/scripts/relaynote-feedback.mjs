@@ -39,7 +39,7 @@ async function statuses(){
 async function stopWatcher(id){
   if(!/^[a-f0-9]{24}$/.test(id??''))throw new Error('Specify a watcher id from status');
   const state=await read(path.join(home,'watch-'+id+'.json'));const pid=Number(await fs.readFile(path.join(home,'lock-'+id),'utf8').catch(()=>0));
-  if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!command.includes(entry))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');return true}
+  if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!/relaynote-feedback\.mjs\b.*\bwatch\b/.test(command)||!command.includes(state.sessionId))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');return true}
   return false;
 }
 async function watch(){
@@ -144,9 +144,9 @@ try{
     }
     case 'status':console.log(JSON.stringify(await statuses(),null,2));break;
     case 'stop':{
-      if(flag('all')){let n=0;for(const state of await statuses())if(state.status==='waiting'&&await stopWatcher(state.id))n++;console.log(`Stop requested for ${n} watcher(s)`);break;}
+      if(flag('all')){let n=0;const skipped=[];for(const state of await statuses()){if(state.status!=='waiting')continue;try{if(await stopWatcher(state.id))n++}catch(e){skipped.push(`${state.id}: ${e.message}`)}}console.log(`Stop requested for ${n} watcher(s)`);for(const line of skipped)console.error(line);break;}
       await stopWatcher(args[0]);console.log('Stop requested');break;
     }
-    default:console.log('Relaynote feedback bridge 3.0.2\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID] [--max-hours 24]\nstart SESSION --delivery orca [--events decisions] [--continuous] [--max-hours 24]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID | stop --all\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
+    default:console.log('Relaynote feedback bridge 3.0.3\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID] [--max-hours 24]\nstart SESSION --delivery orca [--events decisions] [--continuous] [--max-hours 24]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID | stop --all\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
   }
 }catch(e){console.error(e.message);process.exitCode=1}

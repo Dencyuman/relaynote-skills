@@ -1,3 +1,7 @@
+# 3.0.3
+
+- `stop` verifies a watcher by its command line (`relaynote-feedback.mjs watch <session>`) rather than by the CLI's own path, so watchers started from an installed copy of the skill can be stopped from the repository copy and vice versa; `stop --all` reports the ones it could not verify instead of aborting.
+
 # 3.0.2
 
 - Every watcher now has a lifetime: `--max-hours` (default 24, max 720) ends it without a decision, and the session's `expires_at` ends it at expiry; a stdout watcher emits one `relaynote.watch.ended` line so the harness knows nothing is pending. Detached watchers can no longer accumulate for weeks.
