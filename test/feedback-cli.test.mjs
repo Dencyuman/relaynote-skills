@@ -50,3 +50,41 @@ test('watch refuses a lifetime outside 1-720 hours',async()=>{
  const r=await run(dir,['watch',sessionId,'--consumer','c','--max-hours','0']);
  assert.equal(r.code,1);assert.match(r.err,/--max-hours/);
 });
+
+test('discussion mode negotiates capability and delivers an explicit send, not an autosave',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-discussion-cli-'));
+ const discussionId='44444444-4444-4444-8444-444444444444';
+ const deliveryId='55555555-5555-4555-8555-555555555555';
+ const sockets=new Set(),actions=[];let submitted=false,snapshots=0,capability=1;
+ const server=http.createServer((req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  if(req.url.endsWith('/snapshot')){snapshots++;return res.end(JSON.stringify({session_id:sessionId,current_round:1,delivery_protocol:3,discussion_protocol:capability,review_status:'in_review',latest_review:null,open_comments:[{id:'draft',body:'saved'}],discussions:submitted?[{id:discussionId,reviewRound:1,sequence:1}]:[],updated_at:submitted?'sent':'draft'}));}
+  if(req.url.endsWith('/events-ticket'))return res.end(JSON.stringify({ticket:'t'}));
+  if(req.url.endsWith('/delivery')){let body='';req.on('data',b=>body+=b);req.on('end',()=>{const data=JSON.parse(body);actions.push(data);res.end(JSON.stringify(data.action==='claim'?{status:'waiting',delivery_id:deliveryId}:{ok:true}));});return;}
+  res.writeHead(404);res.end('{}');
+ });
+ server.on('upgrade',(req,socket)=>{
+  sockets.add(socket);socket.on('data',data=>{if((data[0]&15)===8)socket.end(Buffer.from([0x88,0]));});
+  const key=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${key}\r\nSec-WebSocket-Protocol: relaynote\r\n\r\n`);
+  socket.write(frame({type:'ready'}));
+  setTimeout(()=>socket.write(frame({type:'changed'})),100);
+  setTimeout(()=>{submitted=true;socket.write(frame({type:'changed'}));},250);
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  await run(dir,['login','--server',`http://127.0.0.1:${server.address().port}`,'--api-key-stdin'],'test-key');
+  const result=await run(dir,['watch',sessionId,'--consumer','origin','--events','discussions']);
+  assert.equal(result.code,0,result.err);
+  const events=result.out.trim().split('\n').map(s=>JSON.parse(s)).filter(e=>e.type==='relaynote.feedback');
+  assert.equal(events.length,1);assert.equal(events[0].discussion_id,discussionId);assert.equal(events[0].delivery_id,deliveryId);
+  assert.match(events[0].instruction,/acknowledge_discussion/);
+  assert.equal(actions[0].discussions,true);
+  assert.deepEqual(actions.map(a=>a.action),['bind','claim','sending','sent','disconnect']);
+  assert.ok(actions.filter(a=>a.decision_id).every(a=>a.event_kind==='discussion'));
+  assert.ok(snapshots>=5&&snapshots<=6);
+  capability=0;actions.length=0;
+  const rejected=await run(dir,['watch',sessionId,'--consumer','unsupported','--events','discussions']);
+  assert.equal(rejected.code,1);assert.match(rejected.err,/discussion_protocol 1/);assert.equal(actions.length,0);
+ }finally{for(const socket of sockets)socket.destroy();await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
+});

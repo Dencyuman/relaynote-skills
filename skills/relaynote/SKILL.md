@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
   author: DENCYU Inc.
 ---
 
@@ -19,6 +19,14 @@ read [references/setup.md](references/setup.md). It covers client detection, OAu
 verification, reconnecting, skill updates, and existing API-key clients. Honor explicit onboarding authentication choices for MCP and watcher separately. Prefer OAuth for new connections without an explicit choice; preserve working API-key configurations unless the user requests migration. Never ask users to paste keys into chat.
 
 ## Reporting
+
+For Mermaid, git diffs, bar/line charts or PDF/CSV/JSON files, read
+[references/artifacts.md](references/artifacts.md) before preparing the block.
+For explicitly submitted discussions and same-round supplements, read
+[references/discussions.md](references/discussions.md). Opt in only when requested;
+preserve final-decisions-only monitoring otherwise. Before enabling discussions,
+verify that acknowledge_discussion, reply_comment and supplement inputs are loaded
+in THIS conversation. Reload MCP while preserving this conversation if missing.
 
 Before your first report in a conversation, call `get_reporting_guide` for the
 current server's tool behavior, limits, forms, tables, and image guidance.
@@ -59,6 +67,11 @@ The default loop is:
    If authorized next work remains, do it and report back through Relaynote.
 
 ## Keep the conversation in Relaynote
+
+When discussion delivery is explicitly enabled, a discussion does not close its
+round. Follow references/discussions.md: acknowledge the discussion, then reply
+or add a supplement in that same round. Do not begin a revision just to answer.
+The final-decision revision loop below applies to final decisions, not discussions.
 
 Once feedback arrives through Relaynote, keep substantive replies, answers,
 questions, and subsequent work reports in that SAME Relaynote session until the
