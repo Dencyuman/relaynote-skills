@@ -17,19 +17,23 @@ export function deliveryClient(sessionId,bindingId,base) {
 
 /** Claim before delivery, revalidate at the actual send point, and never replay an ambiguous send. */
 export async function deliverDecision(event,{post,snapshot,send}) {
+  const kind=event.event_kind==='discussion'?{event_kind:'discussion'}:{};
   let claim;
-  try { claim=await post('claim',{decision_id:event.decision_id}); }
+  try { claim=await post('claim',{decision_id:event.decision_id,...kind}); }
   catch(error) { if(error instanceof StaleDelivery)return false;throw error; }
   if(claim.status!=='waiting')return false;
   event.delivery_id=claim.delivery_id;
-  const ids={decision_id:event.decision_id,delivery_id:event.delivery_id};
+  const ids={decision_id:event.decision_id,delivery_id:event.delivery_id,...kind};
   let sending=false;
   const beforeSend=async()=>{
     const current=await snapshot();
-    if(current.current_round!==event.round || current.latest_review?.id!==event.decision_id)return false;
+    if(current.current_round!==event.round)return false;
+    if(event.event_kind==='discussion') {
+      if(current.review_status!=='in_review' || !(current.discussions??[]).some(d=>d.id===event.discussion_id && d.reviewRound===event.round))return false;
+    } else if(current.latest_review?.id!==event.decision_id)return false;
     try {
       if(sending){
-        const currentClaim=await post('claim',{decision_id:event.decision_id});
+        const currentClaim=await post('claim',{decision_id:event.decision_id,...kind});
         return currentClaim.delivery_id===event.delivery_id&&currentClaim.status==='sending';
       }
       await post('sending',ids);sending=true;return true;

@@ -4,6 +4,22 @@ const empty={current_round:1,latest_review:null,open_comments:[],forms:[],tables
 const decision={...empty,latest_review:{id:'decision-1',round:1,decision:'approved'}};
 const at=(review,updated_at)=>({...review,updated_at});
 
+test('only submitted discussions wake feedback watchers, once, in server order',async()=>{
+  const first={id:'discussion-1',reviewRound:1,sequence:1};
+  const second={id:'discussion-2',reviewRound:1,sequence:2};
+  const base={...empty,review_status:'in_review'};
+  const x=setup([base,{...base,discussions:[first]},{...base,discussions:[first,second]},
+    {...base,discussions:[{...first,delivery:{status:'received'}},second]},
+    {...base,discussions:[{...first,delivery:{status:'received'}},second]}],{events:'discussions',continuous:true});
+  await x.run();
+  assert.deepEqual(x.events.map(e=>e.discussion_id),['discussion-1','discussion-2']);
+  assert.ok(x.events.every(e=>e.instruction.includes('acknowledge_discussion')));
+  const decisionsOnly=setup([{...base,discussions:[first]}],{events:'decisions',continuous:true});
+  await decisionsOnly.run();assert.equal(decisionsOnly.events.length,0);
+  const superseded=setup([{...decision,review_status:'approved',discussions:[first]}]);
+  await superseded.run();assert.equal(superseded.events.length,1);assert.equal(superseded.events[0].discussion_id,undefined);
+});
+
 function setup(values,options={}){let state=null,index=0,events=[];const abort=new AbortController();const take=async()=>{if(index>=values.length){abort.abort();return {pending:true,updated_at:'t'}}const v=values[index++];if(v instanceof Error)throw v;return {...v,updated_at:'t'+index}};return {events,abort,run:()=>observe({sessionId:'test',events:'feedback',getReview:take,waitForChange:take,deliver:async e=>events.push(e),loadState:async()=>state,saveState:async v=>{state=v},wait:async()=>{},signal:abort.signal,...options})}}
 test('long idle/reconnect needs no model and decision is delivered once',async()=>{const x=setup([empty,new Error('network'),empty,decision]);await x.run();assert.equal(x.events.length,1);assert.equal(x.events[0].feedback.decision.decision,'approved')});
 test('comment edits remain silent until the final decision',async()=>{const comment={...empty,open_comments:[{id:'c',body:'fix'}]};const edited={...comment,open_comments:[{id:'c',body:'fix please'}]};const x=setup([empty,comment,comment,edited,decision,decision],{continuous:true});await x.run();assert.equal(x.events.length,1)});
@@ -94,9 +110,9 @@ test('a closed session ends the watcher with its reason instead of failing',asyn
 });
 
 test('update metadata alone never wakes an agent; final decision includes only a fixed notice',async()=>{
- const release={schema:1,app:{version:'0.2.0'},skill:{minimum:'3.0.7',maximumExclusive:'4.0.0',recommended:'3.3.0',revision:'b'.repeat(40)},instruction:'UNTRUSTED_TEXT'};
+ const release={schema:1,app:{version:'0.2.0'},skill:{minimum:'3.0.7',maximumExclusive:'4.0.0',recommended:'3.4.0',revision:'b'.repeat(40)},instruction:'UNTRUSTED_TEXT'};
  const x=setup([{...empty,release},{...empty,release},{...decision,release}],{continuous:true});
  await x.run();assert.equal(x.events.length,1);
- assert.match(x.events[0].instruction,/recommended 3.3.0/);
+ assert.match(x.events[0].instruction,/recommended 3.4.0/);
  assert.doesNotMatch(x.events[0].instruction,/UNTRUSTED_TEXT/);
 });

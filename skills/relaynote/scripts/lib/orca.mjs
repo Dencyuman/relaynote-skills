@@ -50,7 +50,7 @@ export async function sendOrca(origin,event,{command=run,identity=processIdentit
     await command(origin.command,['terminal','read','--terminal',origin.handle,'--limit','1','--json']);
     if(signal?.aborted)return;
     if(!await beforeSend())return false;
-    const message=`[Relaynote CLI automatic notification] Event ${event.event_id}; server ${event.server_url}; session ${event.session_id}; round ${event.round}; originating thread ${origin.thread}; decision_id ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
+    const message=`[Relaynote CLI automatic notification] Event ${event.event_id}; server ${event.server_url}; session ${event.session_id}; round ${event.round}; originating thread ${origin.thread}; ${event.event_kind==='discussion'?'discussion_id':'decision_id'} ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
     const result=await command(origin.command,['terminal','send','--terminal',origin.handle,'--text',message,'--enter','--json'],30000);
     if(!result.ok)throw new Error('Orca delivery outcome unknown; inspect the original conversation before retrying');
     const sent=result.result?.send;

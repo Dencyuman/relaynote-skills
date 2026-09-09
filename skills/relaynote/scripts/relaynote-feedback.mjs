@@ -14,6 +14,7 @@ import {eventSource} from './lib/events.mjs';
 import {observe,queueEvent,fingerprint,codexArgs,verifyCodexQueue} from './lib/feedback.mjs';
 import {captureOrca,sendOrca} from './lib/orca.mjs';
 import {prepareImage,uploadAsset,DEFAULTS} from './lib/upload.mjs';
+import {prepareFile,uploadArtifact,gitPatch} from './lib/artifact.mjs';
 const entry=fileURLToPath(import.meta.url),[command,...args]=process.argv.slice(2);
 const option=name=>{const i=args.indexOf('--'+name);return i<0?undefined:args[i+1]};
 const flag=name=>args.includes('--'+name);
@@ -30,17 +31,24 @@ const USAGE={
   '  connection and changes nothing; --force reauthorizes. Live watchers survive a',
   '  same-server login and pick up rotated tokens themselves; switching servers or',
   '  replacing OAuth with an API key requires stopping them first.'],
- watch:['watch SESSION --consumer CONVERSATION_ID [--events decisions] [--continuous] [--max-hours 24] [--replace-binding]',
+ watch:['watch SESSION --consumer CONVERSATION_ID [--events decisions|discussions] [--continuous] [--max-hours 24] [--replace-binding]',
   '  Foreground watcher for a harness-managed task; writes JSON lines to stdout:',
   '  relaynote.watch.started once bound, relaynote.feedback per final decision,',
   '  relaynote.watch.ended when nothing more can arrive. Ignore lines you do not know.'],
- start:['start SESSION --delivery codex|orca|http|bridge [--events decisions] [--continuous] [--max-hours 24] [--replace-binding]',
+ start:['start SESSION --delivery codex|orca|http|bridge [--events decisions|discussions] [--continuous] [--max-hours 24] [--replace-binding]',
   '  start SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT]',
   '  start SESSION --delivery orca',
   '  start SESSION --delivery http --thread ORIGIN --adapter-file ABSOLUTE_PATH',
   '  start SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH',
   '  Detaches a background watcher and prints its startup receipt. stdout delivery',
-  '  belongs to a harness-managed background task, not to start.'],
+  '  belongs to a harness-managed background task, not to start.',
+  '  discussions opts into explicit discussion sends AND final decisions; saves stay silent.'],
+ preflight:['preflight FILE --type pdf|csv|json|diff|mermaid|chart --renderer-project CHECKOUT --out NEW_DIRECTORY',
+  '  Requires Node >=22.13, the renderer checkout dependencies, and local Chrome.',
+  '  Use preflight git --type diff [--staged | --base REF --head REF] [--path PATH].',
+  '  Chart CSV: --x COLUMN --y COLUMN[,COLUMN] [--kind bar|line].'],
+ 'upload-artifact':['upload-artifact MANIFEST --file ORIGINAL --session SESSION',
+  '  Checks preflight hashes and uploads the exact artifact bytes before append_blocks.'],
  upload:['upload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]',
   '  Sends the bytes straight to the server and prints the asset id for append_blocks.'],
  status:['status [--all] [--json]',
@@ -97,18 +105,17 @@ async function stopWatcher(id){
   return false;
 }
 async function watch(){
-  const sessionId=args[0],delivery=option('delivery')||'stdout',events='decisions';
+  const sessionId=args[0],delivery=option('delivery')||'stdout',events=option('events')==='discussions'?'discussions':'decisions';
   if(!/^[0-9a-f-]{36}$/i.test(sessionId ?? ''))throw new Error('Specify a Relaynote session UUID');
   // Every watcher has a lifetime: it ends after --max-hours (default 24) or at the session's expiry, whichever comes first.
   const maxHours=Number(option('max-hours')??MAX_HOURS_DEFAULT);
   if(!(maxHours>=1&&maxHours<=720))throw new Error('--max-hours must be between 1 and 720');
   const deadline=Date.now()+maxHours*3600*1000;
   if(!['stdout','codex','orca','http','bridge'].includes(delivery))throw new Error('Invalid delivery mode');
-  // Final decisions are the only scope. The documented legacy value is normalized out loud;
-  // anything else is refused instead of silently ignored.
+  // Preserve the legacy feedback alias as final-decisions-only.
   if(args.includes('--events')&&option('events')!==events){
     if(option('events')==='feedback')console.error(`--events feedback is deprecated; using ${events}`);
-    else throw new Error(`--events accepts only "${events}"`);
+    else throw new Error('--events accepts only "decisions" or "discussions"');
   }
   const thread=option('thread')||process.env.CODEX_THREAD_ID,remote=option('remote');
   if(delivery==='codex')codexArgs(thread,'probe',remote);
@@ -142,7 +149,8 @@ async function watch(){
     try {
     const initial=await source.snapshot();
     if(initial.delivery_protocol!==3)throw new Error('Upgrade Relaynote: final-decision delivery receipts (protocol 3) are required');
-    await post('bind',{adapter:delivery,replace:flag('replace-binding')});bound=true;
+    if(events==='discussions' && initial.discussion_protocol!==1)throw new Error('Upgrade Relaynote: discussion_protocol 1 is required for --events discussions');
+    await post('bind',{adapter:delivery,replace:flag('replace-binding'),discussions:events==='discussions'});bound=true;
     await source.ready();
     // Tell a stdout consumer that the binding exists, so silence afterwards is not ambiguity.
     if(delivery==='stdout')await line({type:'relaynote.watch.started',session_id:sessionId,watcher_id:id,consumer:option('consumer'),delivery:'stdout',mode:status.mode,binding:'bound',ends_at:status.endsAt,instruction:'Binding confirmed. Nothing arrives until a final decision.'});
@@ -202,7 +210,7 @@ try{
       if(!args[0]||args[0].startsWith('-')){const {id,reason}=detectHost();console.log(JSON.stringify({detected:id,reason,adapter:agents.find(a=>a.id===id)??null,hosts:hostIds},null,2));break;}
       const agent=agents.find(a=>a.id===args[0]);
       if(!agent)throw new Error(`Unknown host "${args[0]}". Valid: ${hostIds.join(', ')}`);
-      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',deliveryProtocol:3,eventScope:'final-decisions',reference:'references/agents.md'},null,2));break;
+      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',deliveryProtocol:3,eventScope:'final-decisions',optionalEvents:{discussions:{serverCapability:'discussion_protocol: 1',argument:'--events discussions',reference:'references/discussions.md'}},artifacts:{reference:'references/artifacts.md',requires:['Node.js >=22.13','Relaynote renderer checkout with pinned npm dependencies','local Google Chrome']},reference:'references/agents.md'},null,2));break;
     }
     case 'agents':console.log(JSON.stringify(agents,null,2));break;
     case 'adapter-template':console.log(JSON.stringify(adapterTemplate(args[0],option('thread'),option('endpoint')),null,2));break;
@@ -235,12 +243,28 @@ try{
       const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{child.kill('SIGTERM');reject(new Error('Watcher startup timed out'))},30000);child.once('message',data=>{clearTimeout(timer);resolve(data)});child.once('error',e=>{clearTimeout(timer);reject(e)});child.once('exit',()=>{clearTimeout(timer);reject(new Error('Watcher did not start; check status and watcher.log'))})});
       child.unref();console.log(JSON.stringify({...ready,monitorProcessOnly:true}));break;
     }
+    case 'preflight':{
+      if(!option('renderer-project')||!option('out'))throw new Error('Specify --renderer-project RELAYNOTE_CHECKOUT and --out NEW_DIRECTORY. Requires its pinned npm dependencies and local Chrome.');
+      let file=args[0];
+      if(option('type')==='diff'&&!file?.startsWith('--')&&file==='git'){
+        const output=path.resolve(option('out'));await fs.mkdir(output,{recursive:true});
+        file=path.join(output,'input.diff');
+        await fs.writeFile(file,gitPatch({base:option('base'),head:option('head'),staged:flag('staged'),paths:option('path')?[option('path')]:[]}),{flag:'wx'});
+      }
+      const result=spawnSync(process.execPath,[path.resolve(option('renderer-project'),'scripts/review-preflight.mjs'),'--file',file,'--type',option('type')||path.extname(file).slice(1),'--out',option('out'),...['title','x','y','kind'].flatMap(name=>option(name)?['--'+name,option(name)]:[])],{stdio:'inherit',timeout:180000});
+      if(result.error||result.status!==0)throw new Error('Preflight failed; no upload or review notification was sent.');
+      break;
+    }
+    case 'upload-artifact':{
+      const block=await uploadArtifact(args[0],option('file'),option('session'));
+      console.log(JSON.stringify({block,next:'append_blocks with this block; await all uploads, then publish_session for the exact round.'}));break;
+    }
     case 'upload':{
       // Bytes go file -> server directly; the model only handles the returned asset_id.
-      if(!args[0])throw new Error('Specify an image file');
-      const image=await prepareImage(args[0],{maxSide:Number(option('max-side')||DEFAULTS.maxSide),quality:Number(option('quality')||DEFAULTS.quality),keep:flag('keep')});
+      if(!args[0])throw new Error('Specify an image, PDF, CSV, JSON or validated SVG file');
+      const image=/\.(pdf|csv|json|svg)$/i.test(args[0])?await prepareFile(args[0]):await prepareImage(args[0],{maxSide:Number(option('max-side')||DEFAULTS.maxSide),quality:Number(option('quality')||DEFAULTS.quality),keep:flag('keep')});
       const reply=await uploadAsset(option('session'),image);
-      console.log(JSON.stringify({...reply,filename:image.filename,bytes:image.buffer.length,content_type:image.contentType,width:image.width,height:image.height,converter:image.converter,next:'append_blocks with {type:"image", asset_id, title, alt, description}'}));break;
+      console.log(JSON.stringify({...reply,filename:image.filename,bytes:image.buffer.length,content_type:image.contentType,width:image.width,height:image.height,converter:image.converter,next:/\.(pdf|csv|json|svg)$/i.test(args[0])?'Asset uploaded only. Use preflight and upload-artifact to obtain a validated block before append_blocks.':'append_blocks with {type:"image", asset_id, title, alt, description}'}));break;
     }
     case 'status':{
       const all=await statuses({prune:true});

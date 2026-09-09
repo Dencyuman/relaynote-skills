@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 export const agents = JSON.parse(await fs.readFile(new URL('./agents.json',import.meta.url),'utf8'));
-export const feedbackMessage = event => `Relaynote event ${event.event_id}: server ${event.server_url}; session ${event.session_id}, round ${event.round}; decision_id ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
+export const feedbackMessage = event => `Relaynote event ${event.event_id}: server ${event.server_url}; session ${event.session_id}, round ${event.round}; ${event.event_kind==='discussion'?'discussion_id':'decision_id'} ${event.decision_id}; delivery_id ${event.delivery_id}. ${event.instruction}`;
 
 export function hookResponse(host, event) {
   const message=feedbackMessage(event);
