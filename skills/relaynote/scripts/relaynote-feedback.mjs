@@ -16,11 +16,39 @@ import {prepareImage,uploadAsset,DEFAULTS} from './lib/upload.mjs';
 const entry=fileURLToPath(import.meta.url),[command,...args]=process.argv.slice(2);
 const option=name=>{const i=args.indexOf('--'+name);return i<0?undefined:args[i+1]};
 const flag=name=>args.includes('--'+name);
-async function statuses(){await init();return Promise.all((await fs.readdir(home)).filter(n=>/^watch-[a-f0-9]{24}\.json$/.test(n)).map(n=>read(path.join(home,n))))}
 const alive=pid=>{try{process.kill(pid,0);return true}catch{return false}};
+const MAX_HOURS_DEFAULT=24, PRUNE_AFTER_MS=7*24*3600*1000;
+// Live watchers are reported as they are; a watcher whose process vanished is marked stopped, and
+// finished records older than a week are removed together with their cursor and lock files.
+async function statuses(){
+  await init();
+  const out=[];
+  for(const name of (await fs.readdir(home)).filter(n=>/^watch-[a-f0-9]{24}\.json$/.test(n))){
+    const file=path.join(home,name);let state;
+    try{state=await read(file)}catch{await fs.unlink(file).catch(()=>{});continue}
+    if(state.status==='waiting'&&!alive(state.pid)){state={...state,status:'stopped',error:'Watcher process is gone'};await write(file,state)}
+    const finishedAt=Date.parse(state.lastEventAt||state.startedAt||0);
+    if(state.status!=='waiting'&&Number.isFinite(finishedAt)&&Date.now()-finishedAt>PRUNE_AFTER_MS){
+      for(const stale of [file,path.join(home,'seen-'+state.id+'.json'),path.join(home,'lock-'+state.id)])await fs.unlink(stale).catch(()=>{});
+      continue;
+    }
+    out.push(state);
+  }
+  return out;
+}
+async function stopWatcher(id){
+  if(!/^[a-f0-9]{24}$/.test(id??''))throw new Error('Specify a watcher id from status');
+  const state=await read(path.join(home,'watch-'+id+'.json'));const pid=Number(await fs.readFile(path.join(home,'lock-'+id),'utf8').catch(()=>0));
+  if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!command.includes(entry))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');return true}
+  return false;
+}
 async function watch(){
   const sessionId=args[0],delivery=option('delivery')||'stdout',events='decisions';
   if(!/^[0-9a-f-]{36}$/i.test(sessionId ?? ''))throw new Error('Specify a Relaynote session UUID');
+  // Every watcher has a lifetime: it ends after --max-hours (default 24) or at the session's expiry, whichever comes first.
+  const maxHours=Number(option('max-hours')??MAX_HOURS_DEFAULT);
+  if(!(maxHours>=1&&maxHours<=720))throw new Error('--max-hours must be between 1 and 720');
+  const deadline=Date.now()+maxHours*3600*1000;
   if(!['stdout','codex','orca','http','bridge'].includes(delivery)||!['decisions','feedback'].includes(events))throw new Error('Invalid delivery or events mode');
   if(option('events') && !['decisions','feedback'].includes(option('events')))throw new Error('Only final decision events are supported');
   const thread=option('thread')||process.env.CODEX_THREAD_ID,remote=option('remote');
@@ -37,19 +65,19 @@ async function watch(){
   await lock.writeFile(String(process.pid));await lock.close();
   const abort=new AbortController();let interruptWait;
   const stop=()=>{abort.abort();interruptWait?.()};process.on('SIGTERM',stop);process.on('SIGINT',stop);
-  const status={id,sessionId,delivery,events,thread:delivery==='orca'?origin.thread:['codex','http','bridge'].includes(delivery)?thread:undefined,origin,pid:process.pid,startedAt:new Date().toISOString(),status:'waiting',mode:'websocket'};
+  const status={id,sessionId,delivery,events,thread:delivery==='orca'?origin.thread:['codex','http','bridge'].includes(delivery)?thread:undefined,origin,pid:process.pid,startedAt:new Date().toISOString(),status:'waiting',mode:'websocket',maxHours,endsAt:new Date(deadline).toISOString()};
   try{
     await write(statusPath,status);
     const source=eventSource(sessionId,{signal:abort.signal,onMode:async mode=>{status.mode=mode;await write(statusPath,{...await read(statusPath),mode})}});
     const post=deliveryClient(sessionId,id,auth.base);
-    let bound=false;
+    let bound=false,outcome;
     try {
     const initial=await source.snapshot();
     if(initial.delivery_protocol!==3)throw new Error('Upgrade Relaynote: final-decision delivery receipts (protocol 3) are required');
     await post('bind',{adapter:delivery,replace:flag('replace-binding')});bound=true;
     await source.ready();
     if(process.send){process.send({ready:true,id,pid:process.pid});process.disconnect()}
-    await observe({sessionId,events,continuous:flag('continuous'),signal:abort.signal,
+    outcome=await observe({sessionId,events,continuous:flag('continuous'),deadline,signal:abort.signal,
       getReview:async id=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return source.snapshot()},
       waitForChange:async(id,since,seconds)=>{if((await credentials()).base!==auth.base)throw new Error('Access denied: server changed');return source.wait(id,since,seconds)},
       loadState:()=>read(statePath).catch(e=>{if(e.code==='ENOENT')return null;throw e}),saveState:state=>write(statePath,state),
@@ -73,7 +101,10 @@ async function watch(){
       onMode:async next=>{status.mode=next;await write(statusPath,{...await read(statusPath).catch(()=>({})),...status})},
     });
     } finally { source.close(); if(bound)await post('disconnect').catch(()=>{}); }
-    await write(statusPath,{...await read(statusPath),status:abort.signal.aborted?'stopped':'completed'});
+    const ended=abort.signal.aborted?'stopped':outcome?.ended??'completed';
+    await write(statusPath,{...await read(statusPath),status:ended});
+    // Tell a stdout consumer (e.g. a Claude Code Monitor) that nothing is being watched any more.
+    if(delivery==='stdout'&&outcome?.ended)await new Promise((resolve,reject)=>process.stdout.write(JSON.stringify({type:'relaynote.watch.ended',session_id:sessionId,reason:outcome.ended,instruction:outcome.ended==='expired'?'This review session has expired; nothing more will arrive from it.':`This watcher reached its ${maxHours}-hour lifetime and stopped without a decision. If a decision is still expected, start the same watch command again; otherwise nothing is pending.`})+'\n',e=>e?reject(e):resolve()));
   }catch(e){await write(statusPath,{...status,status:'failed',error:e.message});throw e}
   finally{await fs.unlink(lockPath).catch(()=>{});process.removeListener('SIGTERM',stop);process.removeListener('SIGINT',stop)}
 }
@@ -113,10 +144,9 @@ try{
     }
     case 'status':console.log(JSON.stringify(await statuses(),null,2));break;
     case 'stop':{
-      const id=args[0];if(!/^[a-f0-9]{24}$/.test(id??''))throw new Error('Specify a watcher id from status');
-      const state=await read(path.join(home,'watch-'+id+'.json'));const pid=Number(await fs.readFile(path.join(home,'lock-'+id),'utf8').catch(()=>0));
-      if(pid && pid===state.pid && state.status==='waiting' && alive(pid)){const command=spawnSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'}).stdout||'';if(!command.includes(entry))throw new Error('Process ownership cannot be verified');process.kill(pid,'SIGTERM');}console.log('Stop requested');break;
+      if(flag('all')){let n=0;for(const state of await statuses())if(state.status==='waiting'&&await stopWatcher(state.id))n++;console.log(`Stop requested for ${n} watcher(s)`);break;}
+      await stopWatcher(args[0]);console.log('Stop requested');break;
     }
-    default:console.log('Relaynote feedback bridge 3.0.1\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID]\nstart SESSION --delivery orca [--events decisions] [--continuous]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
+    default:console.log('Relaynote feedback bridge 3.0.2\nlogin [--server ORIGIN] [--no-open | --api-key-stdin]\nwatch SESSION [--events decisions] [--continuous] [--consumer CONVERSATION_ID] [--max-hours 24]\nstart SESSION --delivery orca [--events decisions] [--continuous] [--max-hours 24]\nstart SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT] [--events decisions] [--continuous]\nupload FILE --session SESSION [--max-side 1600] [--quality 76] [--keep]\nstatus | stop WATCHER_ID | stop --all\nlogin --device [--server ORIGIN]\nagents | describe HOST\nbind SESSION --host HOST --thread ORIGIN\nhook --host HOST\nadapter-template HOST --thread ORIGIN --endpoint URL\nstart SESSION --delivery http --thread ORIGIN --adapter-file FILE\nbridge --protocol acp|amp --socket ABSOLUTE_PATH -- COMMAND ARGS\nstart SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH');
   }
 }catch(e){console.error(e.message);process.exitCode=1}

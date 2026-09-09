@@ -1,3 +1,8 @@
+# 3.0.2
+
+- Every watcher now has a lifetime: `--max-hours` (default 24, max 720) ends it without a decision, and the session's `expires_at` ends it at expiry; a stdout watcher emits one `relaynote.watch.ended` line so the harness knows nothing is pending. Detached watchers can no longer accumulate for weeks.
+- `status` marks vanished processes as stopped and prunes finished records older than a week; `stop --all` stops every live watcher.
+
 # 3.0.1
 
 - `upload`: shrink by width (1600px) with a separate height allowance (5x), so a tall stitched page capture keeps a readable width instead of collapsing to a sliver.

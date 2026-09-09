@@ -37,3 +37,10 @@ test('a legacy server is rejected, never downgraded to polling',async()=>{
   assert.equal(result.code,1);assert.match(result.err,/does not support WebSocket Hibernation/);assert.equal(requests,1);
  }finally{await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('watch refuses a lifetime outside 1-720 hours',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-feedback-hours-'));
+ await fs.writeFile(path.join(dir,'auth.json'),JSON.stringify({base:'http://127.0.0.1:9',apiKey:'k'}));
+ const r=await run(dir,['watch',sessionId,'--consumer','c','--max-hours','0']);
+ assert.equal(r.code,1);assert.match(r.err,/--max-hours/);
+});

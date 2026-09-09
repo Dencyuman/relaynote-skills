@@ -37,20 +37,29 @@ const RETRY_MIN_MS = 3000, RETRY_MAX_MS = 60000;
 /**
  * Processes push snapshots. Idle deadlines carry pending=true and do not fetch data.
  */
-export async function observe({sessionId,events='decisions',continuous=false,getReview,waitForChange,deliver,loadState,saveState,wait,signal,onRetry=()=>{},onMode=()=>{}}) {
+/**
+ * `deadline` (epoch ms) bounds the watcher's own lifetime; the session's `expires_at`
+ * from each snapshot bounds it too. Reaching either returns {ended} instead of
+ * waiting for a session that will never decide.
+ */
+export async function observe({sessionId,events='decisions',continuous=false,deadline=null,getReview,waitForChange,deliver,loadState,saveState,wait,signal,onRetry=()=>{},onMode=()=>{}}) {
   let state=await loadState();
   // Persist the latest source cursor with the delivered snapshot.
   let updatedAt=state?.updatedAt??null;
   if(!waitForChange)throw new Error('WebSocket Hibernation event source is required');
   const mode='websocket';
-  let backoff=0,baseline=true;
+  let backoff=0,baseline=true,expiresAt=null;
+  const endsAt=()=>{const ends=[deadline,expiresAt].filter(Boolean);return ends.length?Math.min(...ends):null};
   await onMode(mode);
   const commit=async next=>{state=updatedAt===null?next:{...next,updatedAt};await saveState(state)};
   while(!signal?.aborted){
+    const end=endsAt();
+    if(end!==null&&Date.now()>=end)return {ended:end===deadline?'timed_out':'expired'};
+    const seconds=end===null?300:Math.max(1,Math.min(300,Math.ceil((end-Date.now())/1000)));
     let review;
     try{
       // The baseline read delivers feedback that already exists before any waiting starts.
-      review=baseline ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,300);
+      review=baseline ? await getReview(sessionId) : await waitForChange(sessionId,updatedAt??undefined,seconds);
       backoff=0;
     }catch(e){
       if(isFatal(e))throw e;
@@ -62,6 +71,7 @@ export async function observe({sessionId,events='decisions',continuous=false,get
     }
     if(signal?.aborted)return;
     if(review.updated_at===undefined)throw new Error('WebSocket Hibernation server must provide a change cursor');else updatedAt=review.updated_at;
+    if(review.expires_at){const parsed=Date.parse(review.expires_at);if(Number.isFinite(parsed))expiresAt=parsed}
     // An idle wait deadline carries no snapshot; do not query data or invoke the model.
     if(!baseline&&review.pending===true)continue;
     baseline=false;

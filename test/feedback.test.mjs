@@ -73,3 +73,14 @@ test('a resumed watcher push waits from its persisted cursor',async()=>{
   assert.equal(x.events.length,0); // already delivered before the restart
   assert.equal(x.sinces[0],'t1'); // resumes from the saved cursor, not from "now"
 });
+
+test('a watcher ends at its deadline or at the session expiry without delivering',async()=>{
+  const past=longPoll([at(empty,'t0')],{deadline:Date.now()-1});
+  assert.deepEqual(await past.run(),{ended:'timed_out'});
+  assert.equal(past.events.length,0);
+  const expired=longPoll([{...at(empty,'t0'),expires_at:new Date(Date.now()-1000).toISOString()},{pending:true,updated_at:'t0'}]);
+  assert.deepEqual(await expired.run(),{ended:'expired'});
+  assert.equal(expired.events.length,0);
+  const alive=longPoll([at(empty,'t0'),{pending:true,updated_at:'t0'}],{deadline:Date.now()+3600_000});
+  assert.equal(await alive.run(),undefined); // ran out of scripted answers, not out of time
+});
