@@ -58,3 +58,19 @@ answer the superseded event. A failed or ambiguous send is not permission to
 replay it. Check the pinned original conversation. Later exact ACK can confirm
 receipt while the round is still current. Saved drafts remain silent, and default
 final-decision monitoring is unchanged.
+
+## Publish the completed response (response_cycle_protocol: 1)
+
+On servers advertising `response_cycle_protocol: 1`, the first saved AI reply or
+supplement starts preparation in the SAME round. Further replies/supplements are
+allowed while that response is preparing. Finish all content and uploads, read
+`response_version` from `get_session_review`, then call
+`publish_session(session_id, round, response_version)` with those exact values.
+This returns the response to review waiting without creating a new round.
+Reuse the exact version on an uncertain retry; if it is stale, re-read the work
+before publishing. Do not publish another writer's unfinished response blindly.
+Verify `response_pending=false` and `review_status=in_review` after publication.
+An ACK ends the delivery track only; it never starts preparation by itself.
+A saved answer link is evidence of a saved reply, not proof the response was
+published. On older servers without this capability, retain the prior atomic
+supplement behavior and do not send `response_version`.

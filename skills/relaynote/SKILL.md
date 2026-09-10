@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "3.4.0"
+  version: "3.4.1"
   author: DENCYU Inc.
 ---
 
@@ -70,7 +70,7 @@ The default loop is:
 
 When discussion delivery is explicitly enabled, a discussion does not close its
 round. Follow references/discussions.md: acknowledge the discussion, then reply
-or add a supplement in that same round. Do not begin a revision just to answer.
+or add a supplement in that same round. With response_cycle_protocol=1, publish the completed response with its exact response_version, as described in references/discussions.md. Do not begin a revision just to answer.
 The final-decision revision loop below applies to final decisions, not discussions.
 
 Once feedback arrives through Relaynote, keep substantive replies, answers,

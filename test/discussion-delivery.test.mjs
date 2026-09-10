@@ -29,3 +29,14 @@ test('linked answer guidance is capability gated and preserves event identity',(
   assert.match(linked.instruction,/receipt alone is not a completed answer/);
   assert.equal(discussionEvent('s',discussion,'1').instruction,legacy.instruction);
 });
+
+test('response publication guidance is gated without changing discussion identity',()=>{
+  const discussion={id:'d',reviewRound:2};
+  const prior=discussionEvent('s',discussion,1);
+  const current=discussionEvent('s',discussion,1,1);
+  assert.equal(current.event_id,prior.event_id);
+  assert.doesNotMatch(prior.instruction,/response_version/);
+  assert.match(current.instruction,/publish_session/);
+  assert.match(current.instruction,/response_pending=false/);
+  assert.equal(discussionEvent('s',discussion,1,'1').instruction,prior.instruction);
+});
