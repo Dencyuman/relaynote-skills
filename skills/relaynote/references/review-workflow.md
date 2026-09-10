@@ -79,3 +79,8 @@ the response as titled blocks, `publish_session`, and keep/rearm the watcher for
 this same AI conversation. If no work or question remains, do not manufacture a
 new round for an acknowledgement. If the owner closed the session, stop the loop;
 do not reopen or create a replacement session without their instruction.
+
+For an explicit discussion on a server with response_cycle_protocol=1, saving a
+reply or supplement starts response preparation. Finish all changes and uploads,
+then use publish_session in the SAME round with the exact current response_version.
+This response publication is distinct from begin_revision after a final decision.
