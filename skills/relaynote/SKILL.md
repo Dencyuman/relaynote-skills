@@ -75,6 +75,22 @@ The default loop is:
 6. Approval completes the current round, not necessarily the task or session.
    If authorized next work remains, do it and report back through Relaynote.
 
+## Email handoff
+
+When preparing an email for an external mail client, never insert Relaynote
+session, review, or asset URLs into its subject, body, signature, or attachments.
+Attach the actual file bytes; never substitute a Relaynote link for an attachment.
+If the selected mail integration cannot attach the files, explain the limitation
+in the review instead of silently inserting links. This rule applies to the
+outgoing email; continue sharing review URLs with the user in the review conversation.
+
+## Mail and calendar handoff
+
+Use these blocks only when the current server's get_reporting_guide advertises
+email/calendar support. Read [references/handoff.md](references/handoff.md) for
+attachment uploads, mail-client limitations, calendar preflight, private copies,
+and the explicit human confirmation required for external registration.
+
 ## Keep the conversation in Relaynote
 
 When discussion delivery is explicitly enabled, a discussion does not close its
