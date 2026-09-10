@@ -35,3 +35,26 @@ On a discussion notification:
 Keep final-decision handling unchanged: read the exact current decision, then
 `acknowledge_review` with its decision and delivery IDs. Same-thread adapters,
 WebSocket Hibernation, and fail-closed behavior on ambiguous sends are shared.
+
+## Linked answers (3.4)
+
+An app advertising `discussion_response_protocol: 1` additionally stores the
+relationship between a submitted discussion and its answers. Reload MCP in this
+same conversation if the new optional inputs are missing. Include `discussion_id`
+in `reply_comment`, or `supplement.discussion_id` in `append_blocks`, with the exact
+submitted discussion ID. For a whole-report note, `reply_comment` accepts
+`discussion_id` and `body` without a parent comment. Continue to pass
+`parent_comment_id` when answering a specific block comment.
+
+After saving, `get_session_review.discussions[].responses` identifies the persisted
+reply comments and supplement blocks. Only those saved links justify “answer
+available”; ACK proves receipt, not completion or current activity. An unlinked
+reply on an older app stays a reply without claiming tracked completion. Do not
+send the new optional fields when that app lacks the capability.
+
+Delivery history preserves known stage timestamps and past rounds. A final
+decision, new round, or owner closure ends pending discussion work; do not ACK or
+answer the superseded event. A failed or ambiguous send is not permission to
+replay it. Check the pinned original conversation. Later exact ACK can confirm
+receipt while the round is still current. Saved drafts remain silent, and default
+final-decision monitoring is unchanged.
