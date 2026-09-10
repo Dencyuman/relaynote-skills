@@ -1,3 +1,9 @@
+> If the server advertises `agent_runtime_protocol: 1`, use [runtime.md](runtime.md)
+> instead of starting the per-review `watch`/`start` commands below. The shared
+> runtime performs these receipts and queues through one Hibernation connection.
+> This file remains the adapter/reference guide and fallback for older servers;
+> never run both watchers for the same review.
+
 # Receive feedback in the originating conversation
 
 Read this when the user wants to continue the SAME conversation after submitting a final

@@ -11,11 +11,13 @@ Add `--agent codex`, `--agent claude-code`, or `--agent cursor` to select a clie
 Ask your AI to use the Relaynote skill to set up OAuth and create your first review.
 A Relaynote account and a remote MCP client are required. OAuth is recommended; existing API-key configurations remain supported and can be managed in Settings.
 
-Release 2.0.0 adds host-specific adapters and requires the new
-WebSocket Hibernation server. Keep 1.4.0 on the old server until the server migration.
-See [host recipes](skills/relaynote/references/agents.md) for the expanded A/B list,
-Device OAuth, and same-process delivery setup. New recipes are documentation-based;
-they are not additional live verification claims.
+On servers advertising `agent_runtime_protocol: 1`, version 3.5.0 can place the
+bundled runtime in a shared user directory after explicit consent. Registered AI
+conversations then share one connection and account authentication across worktrees.
+See [shared runtime setup](skills/relaynote/references/runtime.md). A live host-owned
+listener is still required where the harness has no direct same-conversation API.
+Older servers keep the existing per-review Hibernation workflow; no polling fallback.
+See [host recipes](skills/relaynote/references/agents.md) for actual prerequisites.
 
 ## Releases
 

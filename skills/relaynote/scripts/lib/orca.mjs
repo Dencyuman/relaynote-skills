@@ -33,7 +33,7 @@ export async function captureOrca(){
   if(!/(^|\/)codex$/.test(p.command))throw new Error('Originating Codex process not found');
   return {...origin,agent:p};
 }
-export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal,beforeSend=async()=>true,pause=()=>delay(1000,undefined,{signal})}={}){
+export async function sendOrca(origin,event,{command=run,identity=processIdentity,signal,beforeSend=async()=>true,onBusy=async()=>{},pause=()=>delay(1000,undefined,{signal})}={}){
   const verify=async()=>{
     const p=await identity(origin.agent.pid);
     if(p.started!==origin.agent.started||p.command!==origin.agent.command)throw new Error('Originating Codex process changed');
@@ -42,7 +42,7 @@ export async function sendOrca(origin,event,{command=run,identity=processIdentit
   while(!signal?.aborted){
     await verify();
     const idle=await command(origin.command,['terminal','wait','--terminal',origin.handle,'--for','tui-idle','--timeout-ms','5000','--json'],10000);
-    if(!idle.ok){if(idle.error?.code==='timeout')continue;throw new Error('Cannot wait for the originating Orca terminal')}
+    if(!idle.ok){if(idle.error?.code==='timeout'){await onBusy();continue;}throw new Error('Cannot wait for the originating Orca terminal')}
     const wait=idle.result?.wait;
     if(wait?.handle!==origin.handle||wait.condition!=='tui-idle'||wait.satisfied!==true)
       throw new Error('Originating Orca terminal is blocked or its idle result is invalid; no input was sent');

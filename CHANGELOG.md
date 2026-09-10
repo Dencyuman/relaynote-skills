@@ -1,3 +1,11 @@
+## 3.5.0
+
+- Add an explicitly installed shared runtime, copied from the bundled scripts into private user storage. One Hibernation connection per server/account/device multiplexes existing AI conversations and survives individual review closure.
+- Pair registrations with the same account through MCP, preserve exact conversation generations, reuse authentication across worktrees, and expose local profile/current-conversation discovery.
+- Route owner-assigned tasks through existing adapters; keep uncertain deliveries unreplayed and require AI receipt. Host-task adapters still need their real harness-owned consumer.
+- Lock OAuth refresh across processes and gate runtime updates on explicit consent, a matching old version, and stopped account runtimes. No new agent conversation or OS autostart is created.
+- Use the shared flow only when the server advertises `agent_runtime_protocol: 1`; older servers retain their existing Hibernation workflow.
+
 ## 3.4.0
 
 - Link AI replies and same-round supplements to submitted discussion IDs when the app advertises `discussion_response_protocol: 1`.

@@ -1,3 +1,4 @@
+import {locked} from './lock.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import http from 'node:http';
@@ -25,10 +26,18 @@ async function subjectOf(token,meta,base){
 // Read-only events plus the upload-only scope: the watcher can store report images but never write anything else.
 const watcherScope=meta=>{const supported=name=>meta.scopes_supported?.includes(name);return [supported('relaynote:events')?'relaynote:events':'relaynote',...(supported('relaynote:upload')?['relaynote:upload']:[]),'offline_access'].join(' ')};
 export async function credentials(){return read(file).catch(()=>{throw new AuthError('Run relaynote login first')})}
-export async function accessToken(){const a=await credentials();if(a.apiKey)return{base:a.base,token:a.apiKey};if(a.expiresAt>Date.now()+60000)return{base:a.base,token:a.accessToken};
- refreshing??=(async()=>{if(!a.refreshToken)throw new AuthError('Run login again');const t=await post(sameOrigin(a.tokenEndpoint,a.base),{grant_type:'refresh_token',client_id:a.clientId,refresh_token:a.refreshToken,resource:a.base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');await write(file,{...a,accessToken:t.access_token,refreshToken:t.refresh_token??a.refreshToken,expiresAt:Date.now()+t.expires_in*1000});return{base:a.base,token:t.access_token}})().finally(()=>{refreshing=undefined});return refreshing;
+export async function accessToken(){
+ const available=a=>a.apiKey?{base:a.base,token:a.apiKey}:a.expiresAt>Date.now()+60000?{base:a.base,token:a.accessToken}:null;
+ const current=available(await credentials());if(current)return current;
+ refreshing??=locked(path.join(home,'refresh.lock'),async()=>{
+  const a=await credentials(),fresh=available(a);if(fresh)return fresh;
+  if(!a.refreshToken)throw new AuthError('Run login again');
+  const t=await post(sameOrigin(a.tokenEndpoint,a.base),{grant_type:'refresh_token',client_id:a.clientId,refresh_token:a.refreshToken,resource:a.base+'/mcp'},true);
+  if(!t.access_token)throw new AuthError('No access token');
+  await write(file,{...a,accessToken:t.access_token,refreshToken:t.refresh_token??a.refreshToken,expiresAt:Date.now()+t.expires_in*1000});return{base:a.base,token:t.access_token};
+ }).finally(()=>{refreshing=undefined});return refreshing;
 }
-export async function apiKeyLogin(base,key){await init();if(!key.trim())throw new Error('No key received on stdin');await write(file,{base:endpoint(base),apiKey:key.trim()});}
+export async function apiKeyLogin(base,key){await init();if(!key.trim())throw new Error('No key received on stdin');await write(file,{base:endpoint(base),apiKey:key.trim(),flow:'api-key',authenticatedAt:new Date().toISOString()});}
 export async function login(base,{open=true,onUrl}={}){
  base=endpoint(base);await init();
  const r=await fetch(base+'/.well-known/oauth-authorization-server/api/auth',{signal:AbortSignal.timeout(20000),redirect:'error'});if(!r.ok)throw new Error('OAuth discovery failed');const meta=await r.json();
@@ -53,7 +62,7 @@ export async function login(base,{open=true,onUrl}={}){
   if(open){const command=process.platform==='darwin'?'open':process.platform==='win32'?null:'xdg-open';if(command){const p=spawn(command,[url.href],{stdio:'ignore'});p.on('error',()=>{});p.unref()}}
   const t=await post(meta.token_endpoint,{grant_type:'authorization_code',client_id:client.client_id,redirect_uri:redirect,code:await code,code_verifier:verifier,resource:base+'/mcp'},true);if(!t.access_token)throw new AuthError('No access token');
   const subject=await subjectOf(t,meta,base);
-  await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});
+  await write(file,{base,flow:'browser',authenticatedAt:new Date().toISOString(),clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});
   await complete('connected');
  }catch(error){await complete(error.message==='Authorization denied'?'denied':'failed');throw error;}finally{clearTimeout(timeout);server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
@@ -76,7 +85,7 @@ export async function deviceLogin(base,{onUrl}={}) {
   await new Promise(resolve=>setTimeout(resolve,interval));
   const response=await fetch(meta.token_endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:device_code',client_id:client.client_id,device_code:device.device_code,resource:base+'/mcp'}),signal:AbortSignal.timeout(20000),redirect:'error'});
   const t=await response.json();
-  if(response.ok && t.access_token){const subject=await subjectOf(t,meta,base);await write(file,{base,clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});return;}
+  if(response.ok && t.access_token){const subject=await subjectOf(t,meta,base);await write(file,{base,flow:'device',authenticatedAt:new Date().toISOString(),clientId:client.client_id,tokenEndpoint:meta.token_endpoint,accessToken:t.access_token,refreshToken:t.refresh_token,expiresAt:Date.now()+t.expires_in*1000,scope:t.scope,...(subject?{subject}:{})});return;}
   if(t.error==='authorization_pending')continue;
   if(t.error==='slow_down'){interval+=5000;continue;}
   throw new AuthError(`Device authorization ${t.error||'failed'}`);
