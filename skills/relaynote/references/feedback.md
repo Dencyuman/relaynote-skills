@@ -163,7 +163,9 @@ not a subagent or a detached shell command.
 
 - Comments, edits, forms, table saves and report uploads never trigger the agent.
   The reviewer must submit final approval or request changes. `--events decisions`
-  is the only behavior; the legacy `--events feedback` argument is normalized to decisions.
+  is the default behavior; the legacy `--events feedback` argument is normalized to decisions.
+  Explicit discussion delivery is separately available via `--events discussions`;
+  see `discussions.md`. Draft autosaves remain silent in both modes.
 - Publish only after all content is uploaded: `publish_session(session_id, round)`.
   For follow-ups use `begin_revision(session_id, round)` before adding content.
 - The watcher binds one review to one opaque conversation identity on the server.

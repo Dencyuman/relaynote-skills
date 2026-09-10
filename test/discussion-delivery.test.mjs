@@ -17,3 +17,15 @@ test('discussion delivery rechecks its round and final status at the actual send
   assert.equal(await deliverDecision({...event},{post,snapshot:async()=>({...current,current_round:2}),send}),false);
   assert.equal(sent,1);
 });
+
+import {discussionEvent} from '../skills/relaynote/scripts/lib/feedback.mjs';
+test('linked answer guidance is capability gated and preserves event identity',()=>{
+  const discussion={id:'d',reviewRound:1};
+  const legacy=discussionEvent('s',discussion);
+  const linked=discussionEvent('s',discussion,1);
+  assert.equal(legacy.event_id,linked.event_id);
+  assert.doesNotMatch(legacy.instruction,/supplement.discussion_id/);
+  assert.match(linked.instruction,/supplement.discussion_id/);
+  assert.match(linked.instruction,/receipt alone is not a completed answer/);
+  assert.equal(discussionEvent('s',discussion,'1').instruction,legacy.instruction);
+});

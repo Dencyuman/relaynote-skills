@@ -1,3 +1,9 @@
+## 3.4.0
+
+- Link AI replies and same-round supplements to submitted discussion IDs when the app advertises `discussion_response_protocol: 1`.
+- Distinguish transport acceptance, AI receipt, and a persisted answer. Keep older apps and final-decision monitoring compatible.
+- Preserve the exact original conversation, explicit discussion opt-in, and no replay after ambiguous delivery.
+
 # 3.2.0
 
 - Re-running `login` for the server already connected prints the connection and changes nothing, so a
