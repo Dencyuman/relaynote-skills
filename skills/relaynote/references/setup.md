@@ -1,3 +1,8 @@
+> After reading `get_reporting_guide`, check `agent_runtime_protocol`. With value
+> `1`, continue through [runtime.md](runtime.md) after the selected CLI authentication.
+> Ask for shared local installation consent unless the onboarding prompt already
+> grants it. Preserve the selected MCP and CLI authentication methods.
+
 # Connect Relaynote
 
 Default endpoint (use the explicit origin in the onboarding prompt if different): `https://relaynote.dev/mcp`.

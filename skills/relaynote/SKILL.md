@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "3.4.1"
+  version: "3.5.0"
   author: DENCYU Inc.
 ---
 
@@ -17,6 +17,15 @@ Write reports in the user's working language.
 When the user asks to install/connect Relaynote, or its MCP tools are unavailable,
 read [references/setup.md](references/setup.md). It covers client detection, OAuth,
 verification, reconnecting, skill updates, and existing API-key clients. Honor explicit onboarding authentication choices for MCP and watcher separately. Prefer OAuth for new connections without an explicit choice; preserve working API-key configurations unless the user requests migration. Never ask users to paste keys into chat.
+
+## Shared runtime and originating conversation
+
+When `get_reporting_guide` advertises `agent_runtime_protocol: 1`, read
+[references/runtime.md](references/runtime.md) before onboarding or monitoring.
+It replaces per-review watchers with one local runtime per server/account, while
+keeping the existing exact-conversation adapters and review acknowledgements.
+Never infer this capability from the skill version alone. Servers without it use
+the existing references/feedback.md procedure.
 
 ## Reporting
 

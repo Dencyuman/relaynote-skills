@@ -210,7 +210,7 @@ try{
       if(!args[0]||args[0].startsWith('-')){const {id,reason}=detectHost();console.log(JSON.stringify({detected:id,reason,adapter:agents.find(a=>a.id===id)??null,hosts:hostIds},null,2));break;}
       const agent=agents.find(a=>a.id===args[0]);
       if(!agent)throw new Error(`Unknown host "${args[0]}". Valid: ${hostIds.join(', ')}`);
-      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',deliveryProtocol:3,eventScope:'final-decisions',optionalEvents:{discussions:{serverCapability:'discussion_protocol: 1',argument:'--events discussions',reference:'references/discussions.md'}},artifacts:{reference:'references/artifacts.md',requires:['Node.js >=22.13','Relaynote renderer checkout with pinned npm dependencies','local Google Chrome']},reference:'references/agents.md'},null,2));break;
+      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',sharedRuntime:{protocol:1,reference:'references/runtime.md',setup:'relaynote-runtime.mjs setup --accept-install',registration:'Existing conversation only; verify this host recipe first'},deliveryProtocol:3,eventScope:'final-decisions',optionalEvents:{discussions:{serverCapability:'discussion_protocol: 1',argument:'--events discussions',reference:'references/discussions.md'}},artifacts:{reference:'references/artifacts.md',requires:['Node.js >=22.13','Relaynote renderer checkout with pinned npm dependencies','local Google Chrome']},reference:'references/agents.md'},null,2));break;
     }
     case 'agents':console.log(JSON.stringify(agents,null,2));break;
     case 'adapter-template':console.log(JSON.stringify(adapterTemplate(args[0],option('thread'),option('endpoint')),null,2));break;
