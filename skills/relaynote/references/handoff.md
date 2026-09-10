@@ -26,8 +26,9 @@ VTIMEZONE for named zones and the master for each RECURRENCE-ID. Max 2 MiB and
 and unfamiliar properties in the source. Prefer UTC or canonical fixed JST for
 native registration; other timezone definitions remain available through ICS.
 
-The human edits a private copy and explicitly connects Google/Outlook, selects
-a writable calendar, reviews all details and confirms registration. Appending
+The human edits a private copy and explicitly connects Google, selects
+a writable calendar, reviews all details and confirms registration. Outlook
+controls are temporarily hidden; do not promise Outlook connection in this release. Appending
 or publishing a block does not create events or send invitations. Invite-off
 omits attendees for a personal copy. Invite-on creates new invitations with the
 destination calendar’s organizer; previous organizer/response data is not carried over.
