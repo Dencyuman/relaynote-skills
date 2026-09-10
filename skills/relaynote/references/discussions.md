@@ -1,17 +1,22 @@
-# Submitted discussions (optional capability)
+# Submitted discussions
 
-Default `--events decisions` remains final-decisions-only. The historical
-`--events feedback` alias also remains final-decisions-only for compatibility.
+Submitted discussions are delivered by default. A watcher started without
+`--events` reads `discussion_protocol` from the snapshot and binds for
+discussions when the server advertises `1`, so the reviewer's comments reach the
+originating conversation without anyone turning them on. A server without that
+capability binds for final decisions only; the default degrades, it never fails
+and never switches to polling.
 
-On servers whose snapshot advertises `discussion_protocol: 1`, use
-`--events discussions --continuous` with the existing host-specific command
-and exact originating conversation. This negotiates discussion capability at
-binding time. An unsupported server fails explicitly; never switch to polling.
-Do not silently replace a different binding or start another AI process.
+`--events decisions` opts out and keeps final decisions only. The historical
+`--events feedback` alias is the same opt-out. `--events discussions` still
+requests discussions explicitly and, unlike the default, fails on a server that
+cannot deliver them. The shared runtime registers discussions the same way;
+`--no-discussions` is its opt-out. Do not silently replace a different binding
+or start another AI process.
 
-Before rearming, confirm that this conversation exposes acknowledge_discussion,
+Before binding, confirm that this conversation exposes acknowledge_discussion,
 reply_comment and the append_blocks supplement input. If absent, reload its MCP
-connection without replacing the conversation, then continue. Do not enable a
+connection without replacing the conversation, then continue. Do not bind a
 discussion watcher while the agent cannot acknowledge its notifications.
 
 Only the reviewer's explicit send creates an immutable discussion snapshot.

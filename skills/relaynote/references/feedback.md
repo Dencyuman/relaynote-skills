@@ -65,7 +65,7 @@ key through stdin with `login --api-key-stdin`, never a command argument or chat
    restarting that watcher. Do not detach the process with `nohup` or `&`.
 
 ```sh
-node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions --continuous
+node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --continuous
 ```
 
 The watch command confirms binding with a first `relaynote.watch.started` JSON line;
@@ -98,7 +98,7 @@ an arbitrary transcript. For an embedded client, establish which app-server
 owns that thread before enabling this path.
 
 ```sh
-node "$CLI" start SESSION_UUID --delivery codex --thread ORIGIN_THREAD_UUID --events decisions --continuous
+node "$CLI" start SESSION_UUID --delivery codex --thread ORIGIN_THREAD_UUID --continuous
 node "$CLI" status
 ```
 
@@ -128,7 +128,7 @@ proof the model finished its work; check the original conversation.
 When this conversation exposes `ORCA_TERMINAL_HANDLE`, use the host adapter:
 
 ```sh
-node "$CLI" start SESSION_UUID --delivery orca --events decisions --continuous
+node "$CLI" start SESSION_UUID --delivery orca --continuous
 ```
 
 The detached Node watcher uses Orca's public `terminal wait` and `terminal send`
@@ -150,7 +150,7 @@ Codex background-task completion callback. Label new host/version recipes as doc
 Use the parent conversation's native background Shell feature to run:
 
 ```sh
-node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID --events decisions
+node "$CLI" watch SESSION_UUID --consumer CONVERSATION_WATCHER_ID
 ```
 
 The command stays alive without AI inference until feedback changes, prints
@@ -167,11 +167,12 @@ not a subagent or a detached shell command.
 
 ## Final decisions and delivery receipts
 
-- Comments, edits, forms, table saves and report uploads never trigger the agent.
-  The reviewer must submit final approval or request changes. `--events decisions`
-  is the default behavior; the legacy `--events feedback` argument is normalized to decisions.
-  Explicit discussion delivery is separately available via `--events discussions`;
-  see `discussions.md`. Draft autosaves remain silent in both modes.
+- Autosaved comments, edits, forms, table saves and report uploads never trigger the
+  agent. The agent wakes on a final decision, and on a discussion the reviewer
+  explicitly submits. Discussions are on by default wherever the server advertises
+  `discussion_protocol: 1`; see `discussions.md`. `--events decisions` opts out and
+  keeps final decisions only, and the legacy `--events feedback` argument is normalized
+  to that opt-out. Draft autosaves remain silent in every mode.
 - Publish only after all content is uploaded: `publish_session(session_id, round)`.
   For follow-ups use `begin_revision(session_id, round)` before adding content.
 - The watcher binds one review to one opaque conversation identity on the server.

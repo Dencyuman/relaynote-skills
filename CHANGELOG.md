@@ -1,3 +1,16 @@
+## Unreleased
+
+- Deliver submitted discussions by default. A watcher started without `--events` reads
+  `discussion_protocol` from the snapshot and binds for discussions when the server
+  advertises it, so a reviewer's comments reach the originating conversation without
+  anyone enabling them first.
+- Degrade instead of failing: a server without `discussion_protocol: 1` binds for final
+  decisions only. `--events discussions` keeps its explicit, fail-loud behavior.
+- Add the opt-outs `--events decisions` (watcher) and `--no-discussions` (shared runtime);
+  the legacy `--events feedback` alias remains the same opt-out.
+- Drop `--events decisions` from the host recipes and `describe`'s event scope so the
+  documented setup no longer starts final-decisions-only by default.
+
 ## 3.5.0
 
 - Add an explicitly installed shared runtime, copied from the bundled scripts into private user storage. One Hibernation connection per server/account/device multiplexes existing AI conversations and survives individual review closure.

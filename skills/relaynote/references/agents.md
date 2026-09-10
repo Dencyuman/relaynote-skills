@@ -40,7 +40,7 @@ conversation, report that environment as unsupported. Do not improvise a polling
 ## Monitor / background completion
 
 Claude Code: use native persistent Monitor and `watch SESSION --consumer ORIGIN
---events decisions --continuous`. Cursor CLI: use native background Shell with the
+--continuous`. Cursor CLI: use native background Shell with the
 same command WITHOUT `--continuous`; task completion wakes its existing conversation.
 Do not detach stdout with `&`. Qwen Code can use its native monitor; if its idle cap
 cannot be disabled without restarting the model, use its Stop hook instead. Do not
@@ -76,8 +76,8 @@ use only a documented hook-capable mode. A hook bound to one review is replaced 
 
 ## Existing queues and terminals
 
-Codex: `start SESSION --delivery codex --thread ORIGIN --events decisions --continuous`.
-Orca: `start SESSION --delivery orca --events decisions --continuous` from the originating
+Codex: `start SESSION --delivery codex --thread ORIGIN --continuous`.
+Orca: `start SESSION --delivery orca --continuous` from the originating
 Orca terminal. See `feedback.md` for identity checks and dated evidence.
 
 ## HTTP APIs
@@ -86,7 +86,7 @@ Generate a data-only configuration, then start the watcher:
 
 ```
 node "$CLI" adapter-template opencode --thread ORIGIN --endpoint http://127.0.0.1:PORT
-node "$CLI" start SESSION --delivery http --thread ORIGIN --adapter-file /absolute/adapter.json --events decisions --continuous
+node "$CLI" start SESSION --delivery http --thread ORIGIN --adapter-file /absolute/adapter.json --continuous
 ```
 
 Save the first command's JSON into the chosen file. Templates exist for OpenCode,
@@ -142,7 +142,7 @@ It learns the original thread ID from Amp's stream and writes user NDJSON to tha
 same stdin. The watcher connects with:
 
 ```
-node "$CLI" start SESSION --delivery bridge --thread ORIGIN --socket /private/dir/relaynote.sock --events decisions --continuous
+node "$CLI" start SESSION --delivery bridge --thread ORIGIN --socket /private/dir/relaynote.sock --continuous
 ```
 
 The socket is private (0600), is never replaced while it exists, and closes with the

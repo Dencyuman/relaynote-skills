@@ -33,8 +33,9 @@ const USAGE={
   '  replacing OAuth with an API key requires stopping them first.'],
  watch:['watch SESSION --consumer CONVERSATION_ID [--events decisions|discussions] [--continuous] [--max-hours 24] [--replace-binding]',
   '  Foreground watcher for a harness-managed task; writes JSON lines to stdout:',
-  '  relaynote.watch.started once bound, relaynote.feedback per final decision,',
-  '  relaynote.watch.ended when nothing more can arrive. Ignore lines you do not know.'],
+  '  relaynote.watch.started once bound, relaynote.feedback per submitted discussion and',
+  '  per final decision, relaynote.watch.ended when nothing more can arrive. Ignore lines',
+  '  you do not know. --events decisions drops the discussions and keeps final decisions.'],
  start:['start SESSION --delivery codex|orca|http|bridge [--events decisions|discussions] [--continuous] [--max-hours 24] [--replace-binding]',
   '  start SESSION --delivery codex --thread UUID [--remote LOCAL_ENDPOINT]',
   '  start SESSION --delivery orca',
@@ -42,7 +43,9 @@ const USAGE={
   '  start SESSION --delivery bridge --thread ORIGIN --socket ABSOLUTE_PATH',
   '  Detaches a background watcher and prints its startup receipt. stdout delivery',
   '  belongs to a harness-managed background task, not to start.',
-  '  discussions opts into explicit discussion sends AND final decisions; saves stay silent.'],
+  '  Without --events, explicit discussion sends AND final decisions are delivered wherever',
+  '  the server advertises discussion_protocol 1; saved drafts stay silent. Use',
+  '  --events decisions to receive final decisions only.'],
  preflight:['preflight FILE --type pdf|csv|json|diff|mermaid|chart --renderer-project CHECKOUT --out NEW_DIRECTORY',
   '  Requires Node >=22.13, the renderer checkout dependencies, and local Chrome.',
   '  Use preflight git --type diff [--staged | --base REF --head REF] [--path PATH].',
@@ -105,7 +108,10 @@ async function stopWatcher(id){
   return false;
 }
 async function watch(){
-  const sessionId=args[0],delivery=option('delivery')||'stdout',events=option('events')==='discussions'?'discussions':'decisions';
+  const sessionId=args[0],delivery=option('delivery')||'stdout';
+  // Discussions are the default wherever the server advertises them; resolved from the
+  // snapshot below so an older server still gets a final-decisions-only binding.
+  let events=option('events')==='discussions'?'discussions':args.includes('--events')?'decisions':'auto';
   if(!/^[0-9a-f-]{36}$/i.test(sessionId ?? ''))throw new Error('Specify a Relaynote session UUID');
   // Every watcher has a lifetime: it ends after --max-hours (default 24) or at the session's expiry, whichever comes first.
   const maxHours=Number(option('max-hours')??MAX_HOURS_DEFAULT);
@@ -113,9 +119,9 @@ async function watch(){
   const deadline=Date.now()+maxHours*3600*1000;
   if(!['stdout','codex','orca','http','bridge'].includes(delivery))throw new Error('Invalid delivery mode');
   // Preserve the legacy feedback alias as final-decisions-only.
-  if(args.includes('--events')&&option('events')!==events){
-    if(option('events')==='feedback')console.error(`--events feedback is deprecated; using ${events}`);
-    else throw new Error('--events accepts only "decisions" or "discussions"');
+  if(args.includes('--events')&&option('events')!=='discussions'){
+    if(option('events')==='feedback')console.error('--events feedback is deprecated; using decisions');
+    else if(option('events')!=='decisions')throw new Error('--events accepts only "decisions" or "discussions"');
   }
   const thread=option('thread')||process.env.CODEX_THREAD_ID,remote=option('remote');
   if(delivery==='codex')codexArgs(thread,'probe',remote);
@@ -150,10 +156,12 @@ async function watch(){
     const initial=await source.snapshot();
     if(initial.delivery_protocol!==3)throw new Error('Upgrade Relaynote: final-decision delivery receipts (protocol 3) are required');
     if(events==='discussions' && initial.discussion_protocol!==1)throw new Error('Upgrade Relaynote: discussion_protocol 1 is required for --events discussions');
+    // An unnegotiated default falls back to final decisions instead of failing on an older server.
+    if(events==='auto'){events=initial.discussion_protocol===1?'discussions':'decisions';status.events=events;await patch({events})}
     await post('bind',{adapter:delivery,replace:flag('replace-binding'),discussions:events==='discussions'});bound=true;
     await source.ready();
     // Tell a stdout consumer that the binding exists, so silence afterwards is not ambiguity.
-    if(delivery==='stdout')await line({type:'relaynote.watch.started',session_id:sessionId,watcher_id:id,consumer:option('consumer'),delivery:'stdout',mode:status.mode,binding:'bound',ends_at:status.endsAt,instruction:'Binding confirmed. Nothing arrives until a final decision.'});
+    if(delivery==='stdout')await line({type:'relaynote.watch.started',session_id:sessionId,watcher_id:id,consumer:option('consumer'),delivery:'stdout',mode:status.mode,binding:'bound',events,ends_at:status.endsAt,instruction:events==='discussions'?'Binding confirmed. Nothing arrives until a submitted discussion or a final decision; saved drafts stay silent.':'Binding confirmed. Nothing arrives until a final decision.'});
     const update=updateInfo(initial.release);
     const notice=updateMessage(initial.release);if(notice)console.error(notice);
     if(process.send){process.send({ready:true,id,pid:process.pid,skillUpdate:update});process.disconnect()}
@@ -210,7 +218,7 @@ try{
       if(!args[0]||args[0].startsWith('-')){const {id,reason}=detectHost();console.log(JSON.stringify({detected:id,reason,adapter:agents.find(a=>a.id===id)??null,hosts:hostIds},null,2));break;}
       const agent=agents.find(a=>a.id===args[0]);
       if(!agent)throw new Error(`Unknown host "${args[0]}". Valid: ${hostIds.join(', ')}`);
-      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',sharedRuntime:{protocol:1,reference:'references/runtime.md',setup:'relaynote-runtime.mjs setup --accept-install',registration:'Existing conversation only; verify this host recipe first'},deliveryProtocol:3,eventScope:'final-decisions',optionalEvents:{discussions:{serverCapability:'discussion_protocol: 1',argument:'--events discussions',reference:'references/discussions.md'}},artifacts:{reference:'references/artifacts.md',requires:['Node.js >=22.13','Relaynote renderer checkout with pinned npm dependencies','local Google Chrome']},reference:'references/agents.md'},null,2));break;
+      console.log(JSON.stringify({...agent,transport:'websocket-hibernation',sharedRuntime:{protocol:1,reference:'references/runtime.md',setup:'relaynote-runtime.mjs setup --accept-install',registration:'Existing conversation only; verify this host recipe first'},deliveryProtocol:3,eventScope:'submitted-discussions-and-final-decisions',events:{discussions:{default:true,serverCapability:'discussion_protocol: 1',fallback:'final-decisions only when the server does not advertise it',optOut:'--events decisions',reference:'references/discussions.md'}},artifacts:{reference:'references/artifacts.md',requires:['Node.js >=22.13','Relaynote renderer checkout with pinned npm dependencies','local Google Chrome']},reference:'references/agents.md'},null,2));break;
     }
     case 'agents':console.log(JSON.stringify(agents,null,2));break;
     case 'adapter-template':console.log(JSON.stringify(adapterTemplate(args[0],option('thread'),option('endpoint')),null,2));break;

@@ -312,7 +312,8 @@ async function register(c) {
     skill_version: opt("skill-version") || VERSION,
     capabilities: {
       receive: adapter === "host-task" ? "host-task" : "push",
-      discussions: args.includes("--discussions"),
+      // This runtime can receive submitted discussions; --no-discussions opts out.
+      discussions: !args.includes("--no-discussions"),
     },
     pairing_code: code,
     ...(opt("setup-id") ? { setup_id: opt("setup-id") } : {}),
@@ -327,7 +328,7 @@ async function register(c) {
     remote: opt("remote"),
     fingerprint,
     base: c.base,
-    discussions: args.includes("--discussions"),
+    discussions: !args.includes("--no-discussions"),
   };
   await write(file, value);
   await rpc(c, "/register", value);
@@ -499,13 +500,16 @@ async function daemon(c) {
     const snapshot = () =>
       api(c.base, `/api/sessions/${item.session_id}/snapshot`);
     try {
+      // An older server without discussion_protocol 1 still gets a final-decisions binding.
+      const discussions =
+        reg.discussions && (await snapshot()).discussion_protocol === 1;
       await post("bind", {
         adapter: reg.adapter,
-        discussions: reg.discussions,
+        discussions,
       });
       await observe({
         sessionId: item.session_id,
-        events: reg.discussions ? "discussions" : "decisions",
+        events: discussions ? "discussions" : "decisions",
         continuous: true,
         signal: abort.signal,
         getReview: snapshot,
@@ -846,7 +850,7 @@ try {
     console.log(JSON.stringify({ profiles }));
   } else if (cmd === "--help" || !cmd)
     console.log(
-      "setup --accept-install [--accept-update --from-version VERSION] | start | register --adapter orca|codex|host-task --brand BRAND [--thread ID] [--setup-id ID] | profiles | current --adapter ADAPTER [--thread ID] | status | listen --conversation ID | stop",
+      "setup --accept-install [--accept-update --from-version VERSION] | start | register --adapter orca|codex|host-task --brand BRAND [--thread ID] [--setup-id ID] [--no-discussions] | profiles | current --adapter ADAPTER [--thread ID] | status | listen --conversation ID | stop",
     );
   else {
     const c = await context();
