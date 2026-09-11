@@ -1,0 +1,33 @@
+name: Notify Relaynote of skill release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag to resend (vX.Y.Z)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  notify:
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch stable release to Relaynote
+        env:
+          GH_TOKEN: ${{ secrets.RELAYNOTE_AUTOMATION_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected stable vX.Y.Z release tag' >&2
+            exit 1
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo 'Configure RELAYNOTE_AUTOMATION_TOKEN for the Relaynote repository' >&2
+            exit 1
+          fi
+          jq -n --arg tag "$RELEASE_TAG" '{event_type:"relaynote-skill-released",client_payload:{tag:$tag}}' > /tmp/dispatch.json
+          gh api repos/Dencyuman/relaynote/dispatches --input /tmp/dispatch.json
