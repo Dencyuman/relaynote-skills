@@ -9,8 +9,8 @@ import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { VERSION, read, write, home, init } from "./lib/state.mjs";
-import { accessToken, credentials } from "./lib/auth.mjs";
-import { captureOrca, sendOrca } from "./lib/orca.mjs";
+import { accessToken, credentials, AuthError } from "./lib/auth.mjs";
+import { captureOrca, sendOrca, orcaIdentity } from "./lib/orca.mjs";
 import {
   deliverHttp,
   renderAdapter,
@@ -19,7 +19,7 @@ import {
 import { deliverBridge } from "./lib/bridge.mjs";
 import { queueEvent, verifyCodexQueue, observe } from "./lib/feedback.mjs";
 import { locked } from "./lib/lock.mjs";
-import { deliveryClient, deliverDecision } from "./lib/delivery.mjs";
+import { deliveryClient, deliverDecision, reasonText } from "./lib/delivery.mjs";
 const entry = fileURLToPath(import.meta.url),
   root = path.resolve(
     process.env.RELAYNOTE_RUNTIME_HOME ||
@@ -286,16 +286,41 @@ async function register(c) {
     if (!socket?.startsWith("/") || !(await fs.stat(socket)).isSocket())
       throw new Error("An existing host-owned bridge socket is required");
   }
-  const fingerprint = digest(
-      JSON.stringify({ adapter, thread, origin, adapterConfig, socket }),
-    ),
+  // Identity is the conversation, never the processes serving it. For Orca that is the terminal's
+  // (incarnation, tab, worktree) plus the thread; pid, handle and runtimeId are hints that change
+  // whenever Codex restarts or Orca reconnects, and rotating the generation over them orphaned
+  // already-attached sessions. Registrations written by 4.0.0 keep their generation: their stored
+  // fingerprint is recomputed the old way from their own stored origin and accepted as a match.
+  const identityOf = (o) =>
+    adapter === "orca"
+      ? { adapter, thread, identity: orcaIdentity(o) }
+      : { adapter, thread, origin: o, adapterConfig, socket };
+  const legacyOf = (o, config, sock) =>
+    digest(
+      JSON.stringify({
+        adapter,
+        thread,
+        origin: o,
+        adapterConfig: config,
+        socket: sock,
+      }),
+    );
+  const fingerprint = digest(JSON.stringify(identityOf(origin))),
     file = path.join(
       c.dir,
       "conversation-" + digest(adapter + "\0" + thread) + ".json",
     );
-  const prior = await read(file).catch(() => null),
-    generation =
-      prior?.fingerprint === fingerprint ? prior.generation : randomUUID(),
+  const prior = await read(file).catch(() => null);
+  const migrated =
+    prior &&
+    prior.fingerprint ===
+      legacyOf(prior.origin, prior.adapterConfig, prior.socket) &&
+    JSON.stringify(identityOf(prior.origin)) ===
+      JSON.stringify(identityOf(origin));
+  const generation =
+      prior && (prior.fingerprint === fingerprint || migrated)
+        ? prior.generation
+        : randomUUID(),
     code = randomBytes(32).toString("hex");
   const localAuth = await credentials();
   const result = await api(c.base, "/api/agents/register", {
@@ -389,7 +414,59 @@ async function daemon(c) {
     version: VERSION,
     connected: false,
     error: null,
+    auth_required: false,
   };
+  // Every failure gets one line on stderr, which `start` redirects into runtime.log. Before this the
+  // daemon logged exactly one kind of error and everything else vanished into a shared status field.
+  const short = (v) => (v ? String(v).slice(0, 8) : "-");
+  const log = (fields) => {
+    try {
+      console.error(
+        [
+          new Date().toISOString(),
+          `conversation=${short(fields.conversation)}`,
+          `session=${short(fields.session)}`,
+          `adapter=${fields.adapter ?? "-"}`,
+          `stage=${fields.stage}`,
+          `reason=${fields.reason ?? "-"}`,
+          String(fields.message ?? "").replace(/\s+/g, " ").slice(0, 500),
+        ].join(" "),
+      );
+    } catch {}
+  };
+  // Per-conversation health, so `status` can say which conversation is broken and why.
+  const health = new Map();
+  const record = (id) => {
+    let value = health.get(id);
+    if (!value) {
+      value = {
+        state: null,
+        listener: false,
+        lastError: null,
+        lastErrorAt: null,
+      };
+      health.set(id, value);
+    }
+    return value;
+  };
+  const note = (reg, fields) => {
+    const entry = record(reg.conversation_id);
+    entry.lastError = `${fields.reason ?? "error"}: ${fields.message}`.slice(
+      0,
+      300,
+    );
+    entry.lastErrorAt = new Date().toISOString();
+    log({ conversation: reg.conversation_id, adapter: reg.adapter, ...fields });
+  };
+  process.on("uncaughtException", (error) => {
+    // One conversation's bad write must never take down every other conversation on this account.
+    log({ stage: "daemon", reason: "uncaught", message: error?.stack ?? error });
+    status.error = String(error?.message ?? error);
+  });
+  process.on("unhandledRejection", (error) => {
+    log({ stage: "daemon", reason: "unhandled", message: error?.stack ?? error });
+    status.error = String(error?.message ?? error);
+  });
   const stop = () => {
     stopped = true;
     daemonAbort.abort();
@@ -401,6 +478,35 @@ async function daemon(c) {
     for (const x of consumers.values()) x.abort.abort();
     server.close();
   };
+  // A dead refresh token cannot be retried into working. Say so, tell every conversation, stop.
+  const authStop = async (error) => {
+    if (status.auth_required) return;
+    status.auth_required = true;
+    status.error = error?.message ?? "Authentication failed";
+    log({
+      stage: "auth",
+      reason: "auth",
+      message: `Relaynote authentication failed (${status.error}). Run \`node CLI login --server ORIGIN\` again, then register and pair this conversation.`,
+    });
+    for (const reg of registrations.values()) {
+      record(reg.conversation_id).lastError = `auth: ${status.error}`;
+      record(reg.conversation_id).lastErrorAt = new Date().toISOString();
+      states[reg.conversation_id] = {
+        generation: reg.generation,
+        state: "auth_required",
+        updatedAt: new Date().toISOString(),
+      };
+      record(reg.conversation_id).state = "auth_required";
+    }
+    if (deviceId)
+      await api(c.base, `/api/agents/devices/${deviceId}/state`, states).catch(
+        () => {},
+      );
+    stop();
+  };
+  const fatalAuth = (error) =>
+    error instanceof AuthError ||
+    (error?.reason === "auth" && [401, 403].includes(error?.status));
   const enqueue = (id, fn) => {
     const previous = queues.get(id) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(fn);
@@ -426,6 +532,7 @@ async function daemon(c) {
       state,
       updatedAt: new Date().toISOString(),
     };
+    record(reg.conversation_id).state = state;
     clearTimeout(stateTimer);
     stateTimer = setTimeout(
       () =>
@@ -456,12 +563,45 @@ async function daemon(c) {
           ? AbortSignal.any([daemonAbort.signal, signal])
           : daemonAbort.signal,
         onBusy: async () => mark(reg, "busy"),
+        // Orca re-issues the terminal handle and Codex restarts while the same conversation stays
+        // open; persist the refreshed hints so the next delivery starts from them.
+        onOrigin: async (origin) => {
+          const updated = { ...registrations.get(reg.conversation_id), origin };
+          registrations.set(reg.conversation_id, updated);
+          reg.origin = origin;
+          await write(
+            path.join(
+              c.dir,
+              "conversation-" +
+                digest(reg.adapter + "\0" + reg.thread) +
+                ".json",
+            ),
+            updated,
+          ).catch((error) =>
+            note(reg, {
+              session: event.session_id,
+              stage: "origin",
+              reason: "identity",
+              message: error.message,
+            }),
+          );
+        },
       });
     if (reg.adapter === "host-task") {
       const output = listeners.get(reg.conversation_id);
       if (!output) {
+        // Nothing was claimed as `sending`, so the delivery stays `waiting` on the server and the
+        // listener's own attach `refresh()` (or the server's re-send) delivers it later.
+        if (record(reg.conversation_id).state !== "unavailable")
+          note(reg, {
+            session: event.session_id,
+            stage: "delivery",
+            reason: "listener_absent",
+            message:
+              "No listener attached for this conversation; the delivery stays waiting",
+          });
         mark(reg, "unavailable");
-        throw new Error("Originating host task is not listening");
+        return false;
       }
       if (!(await beforeSend())) return false;
       output.write(JSON.stringify(event) + "\n");
@@ -553,6 +693,15 @@ async function daemon(c) {
               post,
               snapshot,
               send: (before) => send(reg, event, before, abort.signal),
+              onFailure: (reason) =>
+                note(reg, {
+                  session: item.session_id,
+                  stage: event.event_kind === "discussion"
+                    ? "discussion"
+                    : "review",
+                  reason: reason.split(":")[0],
+                  message: reason,
+                }),
             })
               .then((sent) => {
                 if (sent) mark(reg, "sent");
@@ -560,12 +709,20 @@ async function daemon(c) {
               })
               .catch((error) => {
                 mark(reg, "unavailable");
+                if (fatalAuth(error)) void authStop(error);
                 throw error;
               });
           }),
       });
     } catch (error) {
       status.error = error.message;
+      note(reg, {
+        session: item.session_id,
+        stage: "consumer",
+        reason: error.reason ?? "error",
+        message: error.message,
+      });
+      if (fatalAuth(error)) void authStop(error);
     } finally {
       consumers.delete(item.session_id);
       wakeups.delete(item.session_id);
@@ -653,6 +810,12 @@ async function daemon(c) {
                 }
               } catch (error) {
                 mark(reg, "unavailable");
+                note(reg, {
+                  session: item.session_id,
+                  stage: "task",
+                  reason: error.reason ?? "transport_unknown",
+                  message: reasonText(error),
+                });
                 if (sending)
                   await delivery("sending", "failed").catch(() => {});
                 throw error;
@@ -660,6 +823,7 @@ async function daemon(c) {
             })
               .catch((e) => {
                 status.error = e.message;
+                if (fatalAuth(e)) void authStop(e);
               })
               .finally(() => consumers.delete("task:" + item.session_id));
           }
@@ -675,7 +839,13 @@ async function daemon(c) {
       }
     } catch (error) {
       status.error = error.message;
-      if ([401, 403, 404].includes(error.status)) stop();
+      log({
+        stage: "inbox",
+        reason: error.reason ?? (error.status ? String(error.status) : "error"),
+        message: error.message,
+      });
+      if (fatalAuth(error)) await authStop(error);
+      else if ([401, 403, 404].includes(error.status)) stop();
       else ws?.close(); // Retry via bounded reconnect, never fall back to polling.
     } finally {
       loading = false;
@@ -686,14 +856,51 @@ async function daemon(c) {
       if (req.url?.startsWith("/listen/")) {
         const id = req.url.slice(8),
           reg = registrations.get(id);
-        if (!reg || reg.adapter !== "host-task" || listeners.has(id))
-          throw new Error("Host listener unavailable");
+        // Three separate answers: "unavailable" used to mean all three at once.
+        const problem = !reg
+          ? "not_registered"
+          : reg.adapter !== "host-task"
+            ? "wrong_adapter"
+            : listeners.has(id)
+              ? "already_listening"
+              : null;
+        if (problem) {
+          log({
+            conversation: id,
+            adapter: reg?.adapter,
+            stage: "listen",
+            reason: problem,
+            message: "Listener attach refused",
+          });
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: problem,
+              conversation_id: id,
+              ...(reg ? { adapter: reg.adapter } : {}),
+            }),
+          );
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/x-ndjson" });
         res.write('{"type":"relaynote.runtime.listening"}\n');
         listeners.set(id, res);
+        record(id).listener = true;
+        // A broken pipe on one listener must not reach the daemon as an uncaught error event.
+        res.on("error", (error) => {
+          listeners.delete(id);
+          record(id).listener = false;
+          note(reg, {
+            stage: "listen",
+            reason: "listener_absent",
+            message: error.message,
+          });
+          mark(reg, "unavailable");
+        });
         mark(reg, "ready");
         req.on("close", () => {
           listeners.delete(id);
+          record(id).listener = false;
           mark(reg, "unavailable");
         });
         void refresh();
@@ -714,7 +921,23 @@ async function daemon(c) {
         JSON.stringify({
           ...status,
           device_id: deviceId,
-          conversations: registrations.size,
+          conversation_count: registrations.size,
+          conversations: [...registrations.values()].map((reg) => {
+            const entry = record(reg.conversation_id);
+            return {
+              conversation_id: reg.conversation_id,
+              adapter: reg.adapter,
+              thread: reg.thread,
+              generation: reg.generation,
+              state: entry.state,
+              listener:
+                reg.adapter === "host-task"
+                  ? listeners.has(reg.conversation_id)
+                  : null,
+              lastError: entry.lastError,
+              lastErrorAt: entry.lastErrorAt,
+            };
+          }),
         }),
       );
     } catch (error) {
@@ -784,7 +1007,17 @@ async function daemon(c) {
                     c.base,
                     `/api/agents/devices/${deviceId}/renew`,
                     {},
-                  ).catch(() => ws.close()),
+                  ).catch((error) => {
+                    log({
+                      stage: "renew",
+                      reason:
+                        error.reason ??
+                        (error.status ? String(error.status) : "error"),
+                      message: error.message,
+                    });
+                    if (fatalAuth(error)) void authStop(error);
+                    else ws.close();
+                  }),
                 240000,
               );
             }
@@ -805,10 +1038,13 @@ async function daemon(c) {
         });
       } catch (error) {
         status.error = error.message;
-        if ([401, 403, 404].includes(error.status)) {
-          console.error(error.message);
-          stop();
-        }
+        log({
+          stage: "socket",
+          reason: error.reason ?? (error.status ? String(error.status) : "error"),
+          message: error.message,
+        });
+        if (fatalAuth(error)) await authStop(error);
+        else if ([401, 403, 404].includes(error.status)) stop();
       } finally {
         status.connected = false;
         clearInterval(renew);
@@ -886,7 +1122,11 @@ try {
           "conversation-" + digest(adapter + "\0" + thread) + ".json",
         ),
       );
-      if (origin && JSON.stringify(origin) !== JSON.stringify(reg.origin))
+      if (
+        origin &&
+        JSON.stringify(orcaIdentity(origin)) !==
+          JSON.stringify(orcaIdentity(reg.origin))
+      )
         throw new Error(
           "Origin changed; register and pair this conversation again",
         );
@@ -910,7 +1150,10 @@ try {
         { socketPath: c.socket, path: "/listen/" + opt("conversation") },
         (res) => {
           if (res.statusCode !== 200) {
-            res.resume();
+            let body = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () => console.error(body.trim() || "Listener refused"));
             process.exitCode = 1;
             return;
           }
