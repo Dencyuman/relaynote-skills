@@ -7,7 +7,9 @@ import path from 'node:path';
 
 const home=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-auth-test-'));
 process.env.RELAYNOTE_HOME=home;
-const {login,credentials}=await import('../skills/relaynote/scripts/lib/auth.mjs');
+// Import dynamically: a static import would evaluate state.mjs before RELAYNOTE_HOME is set and
+// point every test at the real user auth home.
+const {login,credentials,AuthError}=await import('../skills/relaynote/scripts/lib/auth.mjs');
 test('OAuth callback waits for token storage and separates success, failure, denial',async()=>{
  let mode='success',registration,base,tokenRequests=0;
  const server=http.createServer(async(req,res)=>{
@@ -61,4 +63,13 @@ test('an account subject is stored only when the server itself supplies one',asy
   assert.equal((await credentials()).subject,undefined);
   assert.equal((await credentials()).clientId,'test-client');
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(home,{recursive:true,force:true});}
+});
+
+test('an authentication failure is a 401 the daemon can stop on',()=>{
+ const error=new AuthError('Run login again');
+ // Without .status the daemon's [401,403,404] stop checks never fired and it retried a dead
+ // refresh token forever on a 60 s backoff.
+ assert.equal(error.status,401);
+ assert.equal(error.reason,'auth');
+ assert.equal([401,403,404].includes(error.status),true);
 });
