@@ -116,3 +116,65 @@ test('update metadata alone never wakes an agent; final decision includes only a
  assert.match(x.events[0].instruction,/recommended 3.9.0/);
  assert.doesNotMatch(x.events[0].instruction,/UNTRUSTED_TEXT/);
 });
+
+import {deliverDecision} from '../skills/relaynote/scripts/lib/delivery.mjs';
+import {refuse} from '../skills/relaynote/scripts/lib/orca.mjs';
+// R5: the server re-mints a `failed` delivery back to `waiting` with a new delivery_id and re-sends
+// `changed`. The seen file must not swallow that: the decision id is the same, the attempt is not.
+test('a re-minted delivery is claimed and delivered again for a decision already seen',async()=>{
+  let state=null,delivery={delivery_id:'d1',status:'waiting'};
+  const actions=[];
+  const post=async(action,data)=>{
+    actions.push({action,...data});
+    if(action==='claim')return {status:delivery.status,delivery_id:delivery.delivery_id};
+    delivery={...delivery,status:action==='sent'?'sent':action};
+    return {ok:true};
+  };
+  const review=()=>({...decision,delivery_reason:1,updated_at:'t'+actions.length,
+    latest_review:{...decision.latest_review,delivery}});
+  const current=()=>({current_round:1,delivery_reason:1,latest_review:{id:'decision-1'}});
+  const run=async send=>{
+    const abort=new AbortController();
+    let first=true;
+    return observe({sessionId:'test',continuous:true,signal:abort.signal,
+      getReview:async()=>{if(!first){abort.abort();return {pending:true,updated_at:'x'}}first=false;return review()},
+      waitForChange:async()=>{abort.abort();return {pending:true,updated_at:'x'}},
+      loadState:async()=>state,saveState:async v=>{state=v},wait:async()=>{},
+      deliver:event=>deliverDecision(event,{post,snapshot:async()=>current(),send})});
+  };
+  // 1. An identity refusal before any send: `failed` carries the reason, nothing is committed.
+  await assert.rejects(run(async before=>{await before();throw refuse('identity','tab is gone')}),/tab is gone/);
+  const failed=actions.find(a=>a.action==='failed');
+  assert.match(failed.reason,/^identity: tab is gone$/);
+  assert.equal(state,null);
+  // 2. The server re-minted the delivery; the next pass claims the new id and delivers.
+  delivery={delivery_id:'d2',status:'waiting'};
+  actions.length=0;
+  await run(async before=>{assert.equal(await before(),true);return true});
+  assert.deepEqual(actions.map(a=>a.action),['claim','sending','sent']);
+  assert.equal(actions[0].delivery_id,undefined);
+  assert.equal(state.decisionId,'decision-1');
+  assert.equal(state.decisionAttempt,'d2:waiting');
+  // 3. Nothing new: the same decision is not re-delivered.
+  actions.length=0;
+  await run(async()=>{throw new Error('must not send')});
+  assert.deepEqual(actions,[]);
+  // 4. Re-minted again: delivered again, claim first.
+  delivery={delivery_id:'d3',status:'waiting'};
+  await run(async before=>{assert.equal(await before(),true);return true});
+  assert.deepEqual(actions.map(a=>a.action),['claim','sending','sent']);
+  assert.equal(state.decisionAttempt,'d3:waiting');
+});
+
+test('a failure reason is only reported to a server that advertises it',async()=>{
+  for(const [snapshotValue,expected] of [[{current_round:1,latest_review:{id:'d'},delivery_reason:1},'identity: gone'],
+    [{current_round:1,latest_review:{id:'d'},delivery_protocol:4},'identity: gone'],
+    [{current_round:1,latest_review:{id:'d'},delivery_protocol:3},undefined]]){
+    const actions=[];
+    await assert.rejects(deliverDecision({decision_id:'d',round:1},{
+      post:async(action,data)=>{actions.push({action,...data});return {status:'waiting',delivery_id:'r'}},
+      snapshot:async()=>snapshotValue,
+      send:async before=>{await before();throw refuse('identity','gone')}}),/gone/);
+    assert.equal(actions.find(a=>a.action==='failed').reason,expected);
+  }
+});

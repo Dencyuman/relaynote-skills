@@ -51,7 +51,15 @@ test("installs independent runtime once, multiplexes two host conversations and 
   let inbox = [],
     snapshots = 0,
     inboxReads = 0,
-    upgrades = 0;
+    upgrades = 0,
+    decided = false;
+  const deliveries = [];
+  const decision = {
+    id: "99999999-9999-4999-8999-999999999999",
+    round: 1,
+    decision: "approved",
+  };
+  let delivery = { delivery_id: "first", status: "waiting" };
   const server = http.createServer(async (req, res) => {
     let raw = "";
     for await (const b of req) raw += b;
@@ -89,16 +97,23 @@ test("installs independent runtime once, multiplexes two host conversations and 
         JSON.stringify({
           session_id: id,
           current_round: 1,
-          review_status: "preparing",
-          delivery_protocol: 3,
-          updated_at: "t1",
+          review_status: decided ? "changes_requested" : "preparing",
+          delivery_protocol: 4,
+          updated_at: decided ? "t2" : "t1",
           expires_at: new Date(Date.now() + 3600000).toISOString(),
-          latest_review: null,
+          latest_review: decided ? { ...decision, delivery } : null,
           open_comments: [],
         }),
       );
     }
-    if (req.url.endsWith("/delivery")) return res.end('{"ok":true}');
+    if (req.url.endsWith("/delivery")) {
+      deliveries.push(body);
+      if (body.action === "claim")
+        return res.end(JSON.stringify({ ...delivery }));
+      if (["sending", "sent", "failed"].includes(body.action))
+        delivery = { ...delivery, status: body.action };
+      return res.end('{"ok":true}');
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -220,7 +235,117 @@ test("installs independent runtime once, multiplexes two host conversations and 
     assert.equal(await exits[1], 0, "listen --once exits 0 after the first event");
     await until(() => inbox[0].request_status === "sent");
     assert.equal(upgrades, 1, "one device socket, not one per review");
+    // The listener for this conversation exited with --once. A decision must NOT be reported
+    // `failed`: with nothing attached it stays `waiting` until a listener comes back.
+    decided = true;
+    inbox[0].session_updated_at = "t2";
+    deliveries.length = 0;
+    for (const socket of sockets) socket.write(frame({ type: "changed" }));
+    await delay(250);
+    assert.deepEqual(deliveries, [], "no claim, no failed, while unattached");
+    assert.equal(delivery.status, "waiting");
+    // Three distinct listener refusals, each printed by `listen` before exiting 1.
+    const unknown = await run(
+      runtime,
+      ["listen", "--conversation", randomUUID()],
+      env,
+      dir,
+    );
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.err, /not_registered/);
+    const busy = await run(
+      runtime,
+      ["listen", "--conversation", regs[0].conversation_id],
+      env,
+      dir,
+    );
+    assert.equal(busy.code, 1);
+    assert.match(busy.err, /already_listening/);
+    const adapterFile = path.join(dir, "adapter.json");
+    await fs.writeFile(
+      adapterFile,
+      JSON.stringify({
+        thread: "thread-http",
+        url: base + "/hook/{{thread}}",
+        body: { message: "{{message}}" },
+      }),
+    );
+    const httpReg = JSON.parse(
+      (
+        await run(
+          runtime,
+          [
+            "register",
+            "--adapter",
+            "http",
+            "--brand",
+            "claude-code",
+            "--thread",
+            "thread-http",
+            "--adapter-file",
+            adapterFile,
+          ],
+          env,
+          dir,
+        )
+      ).out,
+    );
+    const wrong = await run(
+      runtime,
+      ["listen", "--conversation", httpReg.conversation_id],
+      env,
+      dir,
+    );
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.err, /wrong_adapter/);
+    // Re-attaching delivers the decision that was kept waiting.
+    const reattached = spawn(
+      process.execPath,
+      [runtime, "listen", "--conversation", reg.conversation_id],
+      { env: { ...process.env, ...env }, cwd: dir },
+    );
+    listeners.push(reattached);
+    const seen = [];
+    let pending = "";
+    reattached.stdout.on("data", (b) => {
+      pending += b;
+      for (let i; (i = pending.indexOf("\n")) >= 0; ) {
+        seen.push(JSON.parse(pending.slice(0, i)));
+        pending = pending.slice(i + 1);
+      }
+    });
+    await until(() => seen.some((x) => x.decision_id === decision.id));
+    await until(() => deliveries.some((d) => d.action === "sent"));
+    assert.deepEqual(
+      deliveries.filter((d) => d.action !== "bind").map((d) => d.action),
+      ["claim", "sending", "sent"],
+    );
+    assert.equal(
+      deliveries.some((d) => d.action === "failed"),
+      false,
+    );
+    const detail = JSON.parse(
+      (await run(runtime, ["status"], env, dir)).out,
+    );
+    const mine = detail.conversations.find(
+      (x) => x.conversation_id === reg.conversation_id,
+    );
+    assert.equal(mine.adapter, "host-task");
+    assert.equal(mine.listener, true);
+    assert.equal(mine.state, "sent");
+    assert.equal(mine.generation, reg.generation);
+    assert.equal(mine.lastError, null);
+    assert.equal(detail.auth_required, false);
+    assert.equal(detail.conversation_count, 3);
+    assert.equal(
+      detail.conversations.find(
+        (x) => x.conversation_id === httpReg.conversation_id,
+      ).listener,
+      null,
+    );
+    reattached.kill();
     inbox = [];
+    decided = false;
     for (const socket of sockets) socket.write(frame({ type: "changed" }));
     await delay(150);
     const status = await run(runtime, ["status"], env, dir);
@@ -283,7 +408,7 @@ test("updates require the exact expected version and reject downgrades or live r
       dir,
     );
     assert.equal(updated.code, 0, updated.err);
-    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "4.0.0");
+    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "4.1.0");
     await fs.writeFile(
       manifest,
       JSON.stringify({ version: "9.0.0", protocol: 1 }),

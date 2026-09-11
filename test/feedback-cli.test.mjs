@@ -81,6 +81,8 @@ test('discussion mode negotiates capability and delivers an explicit send, not a
   assert.match(events[0].instruction,/acknowledge_discussion/);
   assert.equal(actions[0].discussions,true);
   assert.deepEqual(actions.map(a=>a.action),['bind','claim','sending','sent','disconnect']);
+  // delivery_protocol 3 does not advertise reasons: a `reason` field would 400 on its strict schema.
+  assert.ok(actions.every(a=>a.reason===undefined));
   assert.ok(actions.filter(a=>a.decision_id).every(a=>a.event_kind==='discussion'));
   assert.ok(snapshots>=5&&snapshots<=6);
   capability=0;actions.length=0;

@@ -40,3 +40,19 @@ test('response publication guidance is gated without changing discussion identit
   assert.match(current.instruction,/response_pending=false/);
   assert.equal(discussionEvent('s',discussion,1,'1').instruction,prior.instruction);
 });
+
+import {refuse} from '../skills/relaynote/scripts/lib/orca.mjs';
+test('a failed discussion delivery names its reason only on a server that advertises it',async()=>{
+  const event={event_kind:'discussion',round:1,discussion_id:'d',decision_id:'d'};
+  const current={current_round:1,review_status:'in_review',discussions:[{id:'d',reviewRound:1}]};
+  for(const [extra,expected] of [[{delivery_reason:1},'busy: terminal stayed busy'],[{delivery_protocol:3},undefined]]){
+    const actions=[];
+    await assert.rejects(deliverDecision({...event},{
+      post:async(action,ids)=>{actions.push({action,...ids});return {status:'waiting',delivery_id:'receipt'}},
+      snapshot:async()=>({...current,...extra}),
+      send:async before=>{await before();throw refuse('busy','terminal stayed busy')}}),/busy/);
+    const failed=actions.find(a=>a.action==='failed');
+    assert.equal(failed.event_kind,'discussion');
+    assert.equal(failed.reason,expected);
+  }
+});

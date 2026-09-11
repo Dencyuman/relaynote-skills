@@ -6,7 +6,9 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { home, init, read, write, endpoint } from './state.mjs';
 const file=path.join(home,'auth.json');
-export class AuthError extends Error {}
+// A dead grant is terminal: `.status` makes every caller's 401/403 stop check see it, instead of
+// retrying a refresh token that will never work again.
+export class AuthError extends Error { constructor(message,options){super(message,options);this.status=401;this.reason='auth';} }
 async function post(url,body,form=false){const r=await fetch(url,{method:'POST',headers:{'Content-Type':form?'application/x-www-form-urlencoded':'application/json'},body:form?new URLSearchParams(body):JSON.stringify(body),signal:AbortSignal.timeout(20000),redirect:'error'});if(r.status>=500||r.status===429)throw new Error('Authentication service temporarily unavailable');if(!r.ok)throw new AuthError(`Authentication failed (${r.status}); run login again`);return r.json()}
 function sameOrigin(url,base){if(new URL(url).origin!==base)throw new Error('Unexpected OAuth endpoint');return url;}
 let refreshing;

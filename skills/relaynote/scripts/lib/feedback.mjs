@@ -38,6 +38,14 @@ export async function queueEvent(thread,event,remote) {
     p.stdout.resume();p.stderr.resume();p.on('error',()=>{clearTimeout(timer);reject(new Error('Codex queue is unavailable'))});
     p.on('exit',code=>{clearTimeout(timer);code===0?resolve():reject(new Error('Codex queue failed; verify the originating thread and app-server. No replacement conversation was created.'))});});
 }
+/**
+ * A decision already seen is re-delivered when the server re-minted its delivery: the seen file
+ * remembers which attempt was tried, so a `changed` frame for a `failed` (or re-minted `waiting`)
+ * delivery is not swallowed by the dedup. A server that reports no delivery attempt keeps the old
+ * deliver-once behaviour.
+ */
+const attemptOf=delivery=>delivery?`${delivery.delivery_id??delivery.id??''}:${delivery.status??''}`:null;
+const retry=(seen,attempt,delivery)=>Boolean(delivery)&&['failed','waiting'].includes(delivery.status)&&seen!==attempt;
 /** Auth denial and a vanished session are terminal; everything else is worth another attempt. */
 const isFatal = error => error.constructor.name==='AuthError' || /Access denied|Run .*login|Session not found|Authentication failed/.test(error.message);
 const RETRY_MIN_MS = 3000, RETRY_MAX_MS = 60000;
@@ -88,21 +96,23 @@ export async function observe({sessionId,events='decisions',continuous=false,dea
     const current=snapshot(review),hash=fingerprint(current);
     if(events==='discussions' && !current.decision && review.review_status==='in_review') {
       const discussion=(review.discussions??[]).find(d=>d.reviewRound===current.round && d.delivery?.status!=='received');
-      if(discussion && state?.discussionId!==discussion.id) {
+      const attempt=attemptOf(discussion?.delivery);
+      if(discussion && (state?.discussionId!==discussion.id || retry(state?.discussionAttempt,attempt,discussion.delivery))) {
         const event=discussionEvent(sessionId,discussion,review.discussion_response_protocol,review.response_cycle_protocol);
         const delivered=await deliver(event);
-        await commit({...state,round:current.round,hash,discussionId:discussion.id,lastEventId:event.event_id});
+        await commit({...state,round:current.round,hash,discussionId:discussion.id,discussionAttempt:attempt,lastEventId:event.event_id});
         if(!continuous && delivered!==false)return event;
       }
     }
+    const decisionDelivery=review.latest_review?.delivery,decisionAttempt=attemptOf(decisionDelivery),redeliver=retry(state?.decisionAttempt,decisionAttempt,decisionDelivery);
     // Only an immutable, final decision wakes the model. Draft comments and
     // form edits remain in the report until the reviewer submits their decision.
-    if(hasFeedback(current) && state?.decisionId!==current.decision.id && !(state?.hash===hash && !state?.decisionId)) {
+    if(hasFeedback(current) && (state?.decisionId!==current.decision.id || redeliver) && !(state?.hash===hash && !state?.decisionId && !redeliver)) {
       const event=eventFor(sessionId,current);
       const notice=updateMessage(review.release);
       if(notice)event.instruction += `\n${notice}`;
       const delivered=await deliver(event); // Fail closed on ambiguous delivery; never silently replay it.
-      await commit({round:current.round,hash,decisionId:current.decision.id,lastEventId:event.event_id});
+      await commit({round:current.round,hash,decisionId:current.decision.id,decisionAttempt,lastEventId:event.event_id});
       if(!continuous && delivered!==false)return event;
     }else if(!state||state.round!==current.round||state.hash!==hash){await commit({...state,round:current.round,hash,...(current.decision ? {decisionId:current.decision.id} : {})})}
     else if(updatedAt!==null&&state.updatedAt!==updatedAt){await commit({...state})}
