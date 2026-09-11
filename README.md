@@ -4,7 +4,8 @@ Official agent skill for [Relaynote](https://relaynote.dev), maintained by Dency
 Share AI work as review sessions and receive contextual comments, answers, and approvals.
 
 ```bash
-npx skills add Dencyuman/relaynote-skills --skill relaynote -g
+# Pin the release the Relaynote app currently recommends (shown on the onboarding page):
+npx skills add https://github.com/Dencyuman/relaynote-skills/tree/<REVISION> --skill relaynote -g
 ```
 
 Add `--agent codex`, `--agent claude-code`, or `--agent cursor` to select a client.

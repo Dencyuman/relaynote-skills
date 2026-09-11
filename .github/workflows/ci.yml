@@ -1,0 +1,30 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Validate the skill against the Agent Skills specification
+        run: npx --yes skills-ref validate skills/relaynote
+      - name: Run the CLI and runtime tests
+        run: node --test test/*.test.mjs
+      - name: Skill version matches the CLI version
+        run: |
+          skill=$(sed -n 's/^  version: "\(.*\)"/\1/p' skills/relaynote/SKILL.md)
+          cli=$(node skills/relaynote/scripts/relaynote-feedback.mjs --version)
+          test "$skill" = "$cli" || { echo "SKILL.md $skill != CLI $cli" >&2; exit 1; }
