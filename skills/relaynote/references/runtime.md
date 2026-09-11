@@ -24,7 +24,7 @@ is installed. Obtain consent, or use the explicit consent in the onboarding prom
 3. Run `node /ABSOLUTE/SKILL/scripts/relaynote-runtime.mjs setup --accept-install`.
    It prints the shared runtime path. Use that exact path as `$RUNTIME` below.
    An already installed different version is preserved; do not overwrite it.
-4. Run `node "$RUNTIME" register --adapter ADAPTER --brand BRAND --skill-version 3.5.0`
+4. Run `node "$RUNTIME" register --adapter ADAPTER --brand BRAND --skill-version 3.6.0`
    plus `--setup-id SETUP_ID` during onboarding. Submitted discussions are registered
    by default; confirm this conversation has their receipt/reply tools first, and pass
    `--no-discussions` only when the user asks for final decisions only.

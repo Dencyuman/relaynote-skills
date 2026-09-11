@@ -1,4 +1,4 @@
-## Unreleased
+## 3.6.0
 
 - Deliver submitted discussions by default. A watcher started without `--events` reads
   `discussion_protocol` from the snapshot and binds for discussions when the server
