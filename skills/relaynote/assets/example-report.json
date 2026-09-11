@@ -1,0 +1,48 @@
+{
+  "_comment": "A complete append_blocks payload for a UI change. Replace asset ids with the ones the CLI upload printed. Blocks render in this order.",
+  "session_id": "SESSION_ID",
+  "blocks": [
+    {
+      "type": "markdown",
+      "title": "What changed",
+      "markdown": "Replaced blur-only validation on the checkout form with debounced checks and one shared error style. Errors now appear under the field within 300 ms and clear as soon as the value is valid."
+    },
+    {
+      "type": "comparison",
+      "title": "Error state at 390px",
+      "before": { "asset_id": "00000000-0000-4000-8000-000000000001", "label": "Before: error only on blur" },
+      "after": { "asset_id": "00000000-0000-4000-8000-000000000002", "label": "After: inline while typing" }
+    },
+    {
+      "type": "checklist",
+      "title": "Verified",
+      "items": [
+        { "label": "Every field state at 390px and 1280px", "checked": true },
+        { "label": "Keyboard-only submission", "checked": true },
+        { "label": "Screen reader announces the error text", "checked": false }
+      ]
+    },
+    {
+      "type": "callout",
+      "tone": "warning",
+      "title": "Needs your confirmation",
+      "body": "The screen-reader check is not done. I could not run VoiceOver in this environment."
+    },
+    {
+      "type": "form",
+      "title": "Copy for the empty-field error",
+      "template": "Show {{message}} under an empty required field.\n\nTone: {{tone}}",
+      "fields": [
+        { "id": "message", "type": "text", "value": "This field is required", "required": true },
+        { "id": "tone", "type": "select", "options": ["neutral", "friendly"] }
+      ]
+    },
+    {
+      "type": "link",
+      "links": [
+        { "url": "https://github.com/example/shop/pull/123", "title": "Pull request", "description": "Diff and CI" },
+        { "url": "https://preview.example.com/pr-123/checkout", "title": "Preview", "description": "Try the form on your phone" }
+      ]
+    }
+  ]
+}

@@ -14,10 +14,10 @@ A Relaynote account and a remote MCP client are required. OAuth is recommended; 
 On servers advertising `agent_runtime_protocol: 1`, version 3.5.0 can place the
 bundled runtime in a shared user directory after explicit consent. Registered AI
 conversations then share one connection and account authentication across worktrees.
-See [shared runtime setup](skills/relaynote/references/runtime.md). A live host-owned
+See [monitoring](skills/relaynote/references/monitoring.md). A live host-owned
 listener is still required where the harness has no direct same-conversation API.
 Older servers keep the existing per-review Hibernation workflow; no polling fallback.
-See [host recipes](skills/relaynote/references/agents.md) for actual prerequisites.
+See [monitoring](skills/relaynote/references/monitoring.md) for actual prerequisites.
 
 ## Releases
 
@@ -44,7 +44,7 @@ The skill contains a lightweight feedback watcher. Claude Code Monitor and Codex
 queue delivery, and Cursor CLI background-shell completion were tested against
 actual local Relaynote reviews. Codex inside Orca also supports delivery to the
 original terminal, verified against a production review after a final response.
-See [the compatibility and setup guide](skills/relaynote/references/feedback.md).
+See [setup](skills/relaynote/references/setup.md) and [legacy](skills/relaynote/references/legacy.md).
 It never creates a replacement AI conversation. Setup verifies the actual
 harness and uses its supported delivery path; an embedded app or editor is not
 automatically covered by testing its standalone CLI.

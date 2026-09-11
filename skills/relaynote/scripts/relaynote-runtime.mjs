@@ -344,7 +344,13 @@ async function register(c) {
       pairing_code: code,
       auth_home: c.authHome,
       cli: path.join(path.dirname(entry), "relaynote-feedback.mjs"),
-      next: "Call register_agent with conversation_id and pairing_code in THIS MCP conversation. Keep generation for create/attach and task receipts.",
+      next:
+        "Call register_agent with conversation_id and pairing_code in THIS MCP conversation. Keep generation for create/attach and task receipts." +
+        (adapter === "host-task"
+          ? ` Then start this conversation's listener as the host's persistent background task and wait for its listening line before ending the turn: node ${entry} listen --conversation ${result.conversation_id}`
+          : ""),
+      // Verifiable after the listener is attached; not a substitute for the listen step.
+      verify: `node ${entry} status`,
     }),
   );
 }
@@ -850,7 +856,7 @@ try {
     console.log(JSON.stringify({ profiles }));
   } else if (cmd === "--help" || !cmd)
     console.log(
-      "setup --accept-install [--accept-update --from-version VERSION] | start | register --adapter orca|codex|host-task --brand BRAND [--thread ID] [--setup-id ID] [--no-discussions] | profiles | current --adapter ADAPTER [--thread ID] | status | listen --conversation ID | stop",
+      "setup --accept-install [--accept-update --from-version VERSION] | start | register --adapter orca|codex|host-task --brand BRAND [--thread ID] [--setup-id ID] [--no-discussions] | profiles | current --adapter ADAPTER [--thread ID] | status | listen --conversation ID [--once] | stop",
     );
   else {
     const c = await context();
@@ -896,6 +902,10 @@ try {
     } else if (cmd === "status" || cmd === "stop")
       console.log(JSON.stringify(await rpc(c, "/" + cmd)));
     else if (cmd === "listen") {
+      // --once: print the first delivered event and exit, for hosts whose
+      // background task wakes the conversation on process completion (Cursor CLI).
+      const once = args.includes("--once");
+      let done = false;
       const req = http.get(
         { socketPath: c.socket, path: "/listen/" + opt("conversation") },
         (res) => {
@@ -904,10 +914,28 @@ try {
             process.exitCode = 1;
             return;
           }
-          res.pipe(process.stdout);
+          if (!once) return void res.pipe(process.stdout);
+          res.setEncoding("utf8");
+          let buffer = "";
+          res.on("data", (chunk) => {
+            buffer += chunk;
+            let index;
+            while ((index = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, index + 1);
+              buffer = buffer.slice(index + 1);
+              process.stdout.write(line);
+              // Anything after the listening notice is a delivered event.
+              if (!line.includes('"type":"relaynote.runtime.listening"')) {
+                done = true;
+                req.destroy();
+                return;
+              }
+            }
+          });
         },
       );
       req.on("error", (e) => {
+        if (done) return;
         console.error(e.message);
         process.exitCode = 1;
       });
