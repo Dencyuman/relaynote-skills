@@ -88,3 +88,46 @@ test('discussion mode negotiates capability and delivers an explicit send, not a
   assert.equal(rejected.code,1);assert.match(rejected.err,/discussion_protocol 1/);assert.equal(actions.length,0);
  }finally{for(const socket of sockets)socket.destroy();await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('discussions are the default, negotiated per server, and --events decisions opts out',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'relaynote-default-events-'));
+ const decisionId='66666666-6666-4666-8666-666666666666';
+ const deliveryId='77777777-7777-4777-8777-777777777777';
+ const sockets=new Set();let actions=[],capability=1,decided=false;
+ const server=http.createServer((req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  if(req.url.endsWith('/events-ticket'))return res.end(JSON.stringify({ticket:'t'}));
+  if(req.url.endsWith('/snapshot'))return res.end(JSON.stringify({session_id:sessionId,current_round:1,delivery_protocol:3,discussion_protocol:capability,review_status:decided?'approved':'in_review',latest_review:decided?{id:decisionId,round:1,decision:'approved'}:null,open_comments:[],discussions:[],updated_at:decided?'t1':'t0'}));
+  if(req.url.endsWith('/delivery')){let body='';req.on('data',b=>body+=b);req.on('end',()=>{const data=JSON.parse(body);actions.push(data);res.end(JSON.stringify(data.action==='claim'?{status:'waiting',delivery_id:deliveryId}:{ok:true}))});return;}
+  res.writeHead(404);res.end('{}');
+ });
+ server.on('upgrade',(req,socket)=>{
+  sockets.add(socket);socket.on('data',data=>{if((data[0]&15)===8)socket.end(Buffer.from([0x88,0]));});
+  const key=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${key}\r\nSec-WebSocket-Protocol: relaynote\r\n\r\n`);
+  socket.write(frame({type:'ready'}));
+  setTimeout(()=>{decided=true;socket.write(frame({type:'changed'}));},150);
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const started=result=>result.out.trim().split('\n').map(line=>JSON.parse(line)).find(line=>line.type==='relaynote.watch.started');
+ try{
+  await run(dir,['login','--server',`http://127.0.0.1:${server.address().port}`,'--api-key-stdin'],'test-key');
+  // A capable server needs no flag: comments reach the conversation out of the box.
+  const auto=await run(dir,['watch',sessionId,'--consumer','auto']);
+  assert.equal(auto.code,0,auto.err);
+  assert.equal(actions[0].action,'bind');assert.equal(actions[0].discussions,true);
+  assert.equal(started(auto).events,'discussions');
+  // The same default degrades instead of failing when the server cannot deliver discussions.
+  capability=0;decided=false;actions=[];
+  const legacy=await run(dir,['watch',sessionId,'--consumer','legacy']);
+  assert.equal(legacy.code,0,legacy.err);
+  assert.equal(actions[0].discussions,false);
+  assert.equal(started(legacy).events,'decisions');
+  // Opting out stays available on a capable server.
+  capability=1;decided=false;actions=[];
+  const only=await run(dir,['watch',sessionId,'--consumer','only','--events','decisions']);
+  assert.equal(only.code,0,only.err);
+  assert.equal(actions[0].discussions,false);
+  assert.equal(started(only).events,'decisions');
+ }finally{for(const socket of sockets)socket.destroy();await new Promise(r=>server.close(r));await fs.rm(dir,{recursive:true,force:true});}
+});

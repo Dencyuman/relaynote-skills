@@ -2,7 +2,7 @@
 name: relaynote
 description: Set up Relaynote OAuth MCP and share AI work as review sessions with reports, screenshots, contextual comments, forms, and approvals. Use when the user asks to connect Relaynote, report or request review in Relaynote, or respond to feedback on a Relaynote session.
 metadata:
-  version: "3.5.0"
+  version: "3.6.0"
   author: DENCYU Inc.
 ---
 
@@ -32,10 +32,12 @@ the existing references/feedback.md procedure.
 For Mermaid, git diffs, bar/line charts or PDF/CSV/JSON files, read
 [references/artifacts.md](references/artifacts.md) before preparing the block.
 For explicitly submitted discussions and same-round supplements, read
-[references/discussions.md](references/discussions.md). Opt in only when requested;
-preserve final-decisions-only monitoring otherwise. Before enabling discussions,
-verify that acknowledge_discussion, reply_comment and supplement inputs are loaded
-in THIS conversation. Reload MCP while preserving this conversation if missing.
+[references/discussions.md](references/discussions.md). Discussions are delivered by
+default wherever the server advertises `discussion_protocol: 1`; a server without it
+falls back to final decisions only. Before binding, verify that acknowledge_discussion,
+reply_comment and supplement inputs are loaded in THIS conversation. Reload MCP while
+preserving this conversation if missing. Use `--events decisions` (watcher) or
+`--no-discussions` (shared runtime) only when the user asks for final decisions only.
 
 Before your first report in a conversation, call `get_reporting_guide` for the
 current server's tool behavior, limits, forms, tables, and image guidance.
@@ -93,8 +95,7 @@ and the explicit human confirmation required for external registration.
 
 ## Keep the conversation in Relaynote
 
-When discussion delivery is explicitly enabled, a discussion does not close its
-round. Follow references/discussions.md: acknowledge the discussion, then reply
+A discussion does not close its round. Follow references/discussions.md: acknowledge the discussion, then reply
 or add a supplement in that same round. With response_cycle_protocol=1, publish the completed response with its exact response_version, as described in references/discussions.md. Do not begin a revision just to answer.
 The final-decision revision loop below applies to final decisions, not discussions.
 

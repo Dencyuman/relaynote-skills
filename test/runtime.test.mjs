@@ -274,7 +274,7 @@ test("updates require the exact expected version and reject downgrades or live r
       dir,
     );
     assert.equal(updated.code, 0, updated.err);
-    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "3.5.0");
+    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "3.6.0");
     await fs.writeFile(
       manifest,
       JSON.stringify({ version: "9.0.0", protocol: 1 }),
