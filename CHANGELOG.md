@@ -1,3 +1,27 @@
+## 4.0.0
+
+- Restructure the skill around the Agent Skills specification and Anthropic's
+  authoring guidance: SKILL.md is a 76-line table of contents with a copyable
+  end-of-turn checklist; every reference is one level deep and files over 100
+  lines carry a table of contents.
+- Replace `runtime.md`, `agents.md`, `feedback.md`, `discussions.md` and
+  `review-workflow.md` with `monitoring.md` (register, pair, start and verify
+  this conversation's listener, host by host, as exact commands),
+  `reporting.md` (all 14 block types and when to use each, including
+  `comparison` and `callout`), `receiving.md` (decision and discussion
+  handling in one place) and `legacy.md` (per-review watcher, host adapters
+  and dated evidence for servers without the shared runtime, collapsed).
+- Unify terms: **runtime** (the shared local process) and **listener** (this
+  conversation's receiver). "Watcher", "bridge" and "monitor" remain only in
+  `legacy.md`.
+- `register` now prints the exact `listen` command for host-task adapters and a
+  `verify` command, so the next step never depends on reading the skill.
+- `listen --once` exits after the first delivered event, for hosts whose
+  background task wakes the conversation on completion (Cursor CLI).
+- Frontmatter: third-person description, `compatibility` field, version 4.0.0.
+- Add `assets/example-report.json`, a complete multi-section `append_blocks`
+  payload to copy from.
+
 ## 3.6.0
 
 - Deliver submitted discussions by default. A watcher started without `--events` reads

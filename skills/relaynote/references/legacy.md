@@ -1,16 +1,33 @@
-> If the server advertises `agent_runtime_protocol: 1`, use [runtime.md](runtime.md)
-> instead of starting the per-review `watch`/`start` commands below. The shared
-> runtime performs these receipts and queues through one Hibernation connection.
-> This file remains the adapter/reference guide and fallback for older servers;
-> never run both watchers for the same review.
+# Legacy: servers without the shared runtime
 
-# Receive feedback in the originating conversation
+Use this file only when `get_reporting_guide` does NOT advertise
+`agent_runtime_protocol: 1`, or for a host whose only route is one of the
+adapters below. On current servers, [monitoring.md](monitoring.md) replaces
+everything here. Never run a per-review watcher and the runtime for the same
+review.
+
+Terminology in this file is historical: "watcher" and "bridge" are the
+per-review processes; the runtime does not use them.
+
+## Contents
+
+- Per-review watcher (`watch` / `start`)
+- Host recipes: Claude Code, Codex, Codex in Orca, Cursor CLI
+- Stop hooks
+- HTTP APIs and the ACP/Amp bridge
+- Final decisions and delivery receipts
+- Host evidence (dated)
+- Sources
+
+<details>
+<summary>Per-review watcher and host recipes (3.x)</summary>
+
 
 Read this when the user wants to continue the SAME conversation after submitting a final
 Relaynote decision. The bridge only observes feedback and delivers an event. It
 never runs `codex exec`, `claude -p`, a resume command, or a replacement agent.
 
-New host recipes and their conditions are in [agents.md](agents.md). Monitoring requires a WebSocket Hibernation server (v3 delivery protocol); older servers are rejected.
+Host adapters are in the second section of this file. Monitoring requires a WebSocket Hibernation server (v3 delivery protocol); older servers are rejected.
 
 ## Protocol 3 live verification, 2026-09-09
 
@@ -170,7 +187,7 @@ not a subagent or a detached shell command.
 - Autosaved comments, edits, forms, table saves and report uploads never trigger the
   agent. The agent wakes on a final decision, and on a discussion the reviewer
   explicitly submits. Discussions are on by default wherever the server advertises
-  `discussion_protocol: 1`; see `discussions.md`. `--events decisions` opts out and
+  `discussion_protocol: 1`; see [receiving.md](receiving.md). `--events decisions` opts out and
   keeps final decisions only, and the legacy `--events feedback` argument is normalized
   to that opt-out. Draft autosaves remain silent in every mode.
 - Publish only after all content is uploaded: `publish_session(session_id, round)`.
@@ -209,3 +226,131 @@ not a subagent or a detached shell command.
   Async-hook limitation: https://developers.openai.com/codex/hooks#run-hooks-in-the-background
 - Cursor: https://cursor.com/docs/agent/tools/terminal and the official CLI
   distribution's background work completion handling (2026.09.02-c22c1a3).
+
+</details>
+
+<details>
+<summary>Stop hooks, HTTP APIs, ACP/Amp bridge</summary>
+
+## Stop hooks
+
+
+For each review, bind it to the exact hook conversation:
+
+```
+node "$CLI" bind SESSION --host HOST --thread ORIGIN
+```
+
+Install a **command** hook that executes `node /absolute/path/relaynote-feedback.mjs
+hook --host HOST`. Merge the hook into existing configuration. The native host passes
+its JSON input on stdin. The CLI finds only that conversation's binding, waits for
+WebSocket feedback, and returns the host's continuation JSON. Without a binding it
+exits immediately. Keep logs on stderr. Do not use prompt/LLM hooks.
+
+| Host | Native event | Output |
+| --- | --- | --- |
+| Cursor IDE / CLI | `stop` | `followup_message` |
+| Gemini CLI | `AfterAgent` | `decision: deny`, `reason` |
+| Claude Code, Codex, Qwen Code, Goose, Trae, Auggie, Junie CLI | `Stop` (check installed casing/schema) | `decision: block`, `reason` |
+| Copilot CLI | `agentStop` | `decision: block`, `reason` |
+
+Use the host's documented timeout setting so it can wait for the expected review
+interval. Do not trigger new turns just to rearm an expired hook. If the installed
+host caps that wait, use its asynchronous route (Claude Monitor, Codex queue, or ACP)
+or declare this configuration unsupported. Junie chat/ACP may not execute Stop hooks;
+use only a documented hook-capable mode. A hook bound to one review is replaced by
+`bind` when that conversation posts its next review. Each successful hook delivery disarms that binding; after appending a revised round, bind it again before waiting.
+
+## Existing queues and terminals
+
+Codex: `start SESSION --delivery codex --thread ORIGIN --continuous`.
+Orca: `start SESSION --delivery orca --continuous` from the originating
+Orca terminal. See the first section of this file for identity checks and dated evidence.
+
+## HTTP APIs
+
+Generate a data-only configuration, then start the watcher:
+
+```
+node "$CLI" adapter-template opencode --thread ORIGIN --endpoint http://127.0.0.1:PORT
+node "$CLI" start SESSION --delivery http --thread ORIGIN --adapter-file /absolute/adapter.json --continuous
+```
+
+Save the first command's JSON into the chosen file. Templates exist for OpenCode,
+Kilo (OpenCode-compatible servers), Continue, and Devin. Bind each config to one
+`thread`. Continue's single-conversation server also uses `exclusiveConversation`;
+confirm its instance belongs to this conversation before starting.
+
+Other HTTP hosts use the same `--adapter-file` format:
+
+```json
+{
+  "thread": "exact-origin-id",
+  "url": "http://127.0.0.1:PORT/session/{{thread}}/message",
+  "method": "POST",
+  "body": {"message": "{{message}}"},
+  "headersEnv": {"Authorization": "LOCAL_AGENT_AUTHORIZATION"}
+}
+```
+
+Check the host's actual API and replace URL/body accordingly; this example is NOT a
+universal endpoint. IDs are URL-encoded; message substitution is JSON data, never
+shell code. `headersEnv` references local credentials and never stores their values.
+Ambiguous or rejected delivery stops without retrying into another conversation.
+
+| Host | Route / prerequisite |
+| --- | --- |
+| OpenCode | Its existing local TUI server, `/session/:id/prompt_async`, text `parts` |
+| Kilo Code CLI | Existing compatible local server; confirm current OpenCode route |
+| Continue | Existing `cn serve` instance, `/message`; one conversation per instance |
+| Crush | Server API `/v1/workspaces/{id}/agent`; inspect the current payload and pin workspace **and session**, not just workspace |
+| Devin | Existing cloud session; default endpoint `https://api.devin.ai`; set `DEVIN_AUTHORIZATION` locally to its bearer header |
+| Antigravity | Existing Sidecar / agentapi route only when it identifies the active IDE conversation; never substitute `agy --continue` |
+| Cline CLI | Existing connector only when its API can address the live originating thread; a resume-only connector is unsupported |
+
+## ACP and Amp stdin bridge
+
+Some hosts expose a stream only to their original parent. Install the bridge as the
+initial agent command in that parent, before starting the conversation:
+
+```
+node "$CLI" bridge --protocol acp --socket /private/dir/relaynote.sock -- AGENT ACP_ARGS
+```
+
+This transparently forwards ACP JSON lines between the real host and its one agent
+process. It records session IDs from successful `session/new` / `session/load` /
+`session/resume` responses. Only attached sessions can receive `session/prompt`.
+Use for Copilot CLI, Kiro CLI, or external agents hosted by Zed. Set the actual ACP
+command from installed help; the wrapper does not reconnect to an already-owned
+stdio stream. It creates the initial process once, not a replacement on feedback.
+
+For Amp execute mode, use `--protocol amp -- amp -x --stream-json --stream-json-input`.
+It learns the original thread ID from Amp's stream and writes user NDJSON to that
+same stdin. The watcher connects with:
+
+```
+node "$CLI" start SESSION --delivery bridge --thread ORIGIN --socket /private/dir/relaynote.sock --continuous
+```
+
+The socket is private (0600), is never replaced while it exists, and closes with the
+original process. A wrapper cannot be retrofitted into a running process: provide
+an explicit user restart handoff instead. Stop on unknown origin, agent replacement,
+or an API rejection. Never use the bridge command as a feedback-delivery command.
+
+## Sources and support levels
+
+The registry links each host's primary documentation. Shared protocol references:
+- https://cursor.com/docs/hooks
+- https://geminicli.com/docs/hooks/reference/
+- https://code.claude.com/docs/en/hooks
+- https://docs.github.com/en/copilot/reference/hooks-reference
+- https://opencode.ai/docs/server/
+- https://ampcode.com/news/streaming-json
+- https://agentclientprotocol.com/protocol/prompt-turn
+
+`verified` references the repository's dated host evidence; `documented` is a public
+API recipe; `conditional` requires the listed environment. No new live host evidence
+was collected for this release. Adapt differing configuration syntax from official
+help; do not reinterpret a missing same-conversation route as supported.
+
+</details>

@@ -161,13 +161,21 @@ test("installs independent runtime once, multiplexes two host conversations and 
     }
     assert.equal(regs[0].device_id, regs[1].device_id);
     assert.notEqual(regs[0].conversation_id, regs[1].conversation_id);
+    // A host-task registration tells the agent the exact next command; it must
+    // not depend on the skill text to learn about the listener.
+    assert.match(regs[0].next, /listen --conversation /);
+    assert.ok(regs[0].next.includes(regs[0].conversation_id));
+    assert.match(regs[0].verify, /status$/);
     const streams = [];
-    for (const reg of regs) {
+    const exits = [];
+    for (const [index, reg] of regs.entries()) {
+      // The second conversation uses --once: it must exit after its first event.
       const child = spawn(
         process.execPath,
-        [runtime, "listen", "--conversation", reg.conversation_id],
+        [runtime, "listen", "--conversation", reg.conversation_id, ...(index === 1 ? ["--once"] : [])],
         { env: { ...process.env, ...env }, cwd: dir },
       );
+      exits.push(new Promise((resolve) => child.on("exit", resolve)));
       listeners.push(child);
       const lines = [];
       let raw = "";
@@ -209,6 +217,7 @@ test("installs independent runtime once, multiplexes two host conversations and 
       streams[0].some((x) => x.session_id === session),
       false,
     );
+    assert.equal(await exits[1], 0, "listen --once exits 0 after the first event");
     await until(() => inbox[0].request_status === "sent");
     assert.equal(upgrades, 1, "one device socket, not one per review");
     inbox = [];
@@ -274,7 +283,7 @@ test("updates require the exact expected version and reject downgrades or live r
       dir,
     );
     assert.equal(updated.code, 0, updated.err);
-    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "3.6.0");
+    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "4.0.0");
     await fs.writeFile(
       manifest,
       JSON.stringify({ version: "9.0.0", protocol: 1 }),
