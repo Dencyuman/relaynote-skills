@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Self-contained shared runtime. No agent process is ever created by this entrypoint.
 import fs from "node:fs/promises";
+import { watch } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import http from "node:http";
@@ -20,6 +21,14 @@ import { deliverBridge } from "./lib/bridge.mjs";
 import { queueEvent, verifyCodexQueue, observe } from "./lib/feedback.mjs";
 import { locked } from "./lib/lock.mjs";
 import { deliveryClient, deliverDecision, reasonText } from "./lib/delivery.mjs";
+import {
+  acceptsActivity,
+  activityValue,
+  classifyTail,
+  hostOf,
+  readTail,
+  resolveTranscript,
+} from "./lib/activity.mjs";
 const entry = fileURLToPath(import.meta.url),
   root = path.resolve(
     process.env.RELAYNOTE_RUNTIME_HOME ||
@@ -346,6 +355,9 @@ async function register(c) {
   const value = {
     ...result,
     adapter,
+    brand,
+    // The transcript path is derived from the workspace this conversation was registered in.
+    workspace: process.cwd(),
     thread,
     origin,
     adapterConfig,
@@ -470,6 +482,7 @@ async function daemon(c) {
   const stop = () => {
     stopped = true;
     daemonAbort.abort();
+    for (const id of [...windows.keys()]) closeWindow(id);
     for (const output of listeners.values()) output.end();
     clearTimeout(stateTimer);
     clearInterval(renew);
@@ -519,20 +532,14 @@ async function daemon(c) {
     return next;
   };
   const states = {};
+  // Per conversation: the last activity sent, the file it was read from, the open watch window and
+  // whether the newest snapshot of its session advertised the capability.
+  const activities = new Map(),
+    transcripts = new Map(),
+    windows = new Map(),
+    allowsActivity = new Map();
   let stateTimer;
-  const mark = (reg, state) => {
-    if (stopped) return;
-    if (
-      states[reg.conversation_id]?.state === state &&
-      states[reg.conversation_id]?.generation === reg.generation
-    )
-      return;
-    states[reg.conversation_id] = {
-      generation: reg.generation,
-      state,
-      updatedAt: new Date().toISOString(),
-    };
-    record(reg.conversation_id).state = state;
+  const flush = () => {
     clearTimeout(stateTimer);
     stateTimer = setTimeout(
       () =>
@@ -541,6 +548,151 @@ async function daemon(c) {
         ),
       50,
     );
+  };
+  const compose = (reg, state) => {
+    const activity = activities.get(reg.conversation_id);
+    states[reg.conversation_id] = {
+      generation: reg.generation,
+      state,
+      updatedAt: new Date().toISOString(),
+      ...(activity ? { activity } : {}),
+    };
+  };
+  const mark = (reg, state) => {
+    if (stopped) return;
+    if (
+      states[reg.conversation_id]?.state === state &&
+      states[reg.conversation_id]?.generation === reg.generation
+    )
+      return;
+    compose(reg, state);
+    record(reg.conversation_id).state = state;
+    flush();
+  };
+  // Transitions only: one POST per state change, never a heartbeat. An older server that does not
+  // advertise the capability is never sent `activity` at all.
+  const markActivity = (reg, value) => {
+    if (stopped || !allowsActivity.get(reg.conversation_id)) return;
+    if (activities.get(reg.conversation_id)?.state === value.state) return;
+    activities.set(reg.conversation_id, value);
+    compose(
+      reg,
+      states[reg.conversation_id]?.state ??
+        record(reg.conversation_id).state ??
+        "ready",
+    );
+    flush();
+  };
+  // The AI's own liveness, watched only between a delivered decision and this conversation's
+  // response. Every timer here is local; the only server calls are the transitions above.
+  const quietMs = Number(process.env.RELAYNOTE_ACTIVITY_QUIET_MS) || 600000,
+    settleMs = Number(process.env.RELAYNOTE_ACTIVITY_SETTLE_MS) || 120;
+  const originAlive = (reg) => !reg.origin?.pid || alive(reg.origin.pid);
+  const closeWindow = (id) => {
+    const open = windows.get(id);
+    if (!open) return;
+    windows.delete(id);
+    clearTimeout(open.quiet);
+    clearTimeout(open.settle);
+    for (const watcher of open.watchers)
+      try {
+        watcher.close();
+      } catch {}
+  };
+  const detach = (reg, marker) => {
+    markActivity(
+      reg,
+      activityValue({ state: "detached", source: "process", marker }),
+    );
+    closeWindow(reg.conversation_id);
+  };
+  const armQuiet = (open) => {
+    clearTimeout(open.quiet);
+    open.quiet = setTimeout(() => {
+      if (!windows.has(open.reg.conversation_id)) return;
+      if (!originAlive(open.reg)) return detach(open.reg, "process_gone");
+      markActivity(
+        open.reg,
+        activityValue({
+          state: "quiet",
+          source: "transcript",
+          lastWriteAt: open.lastWriteAt,
+        }),
+      );
+    }, quietMs);
+    open.quiet.unref?.();
+  };
+  const sample = async (open) => {
+    let tail;
+    try {
+      tail = await readTail(open.transcript);
+    } catch {
+      return;
+    }
+    open.lastWriteAt = tail.lastWriteAt;
+    const result = classifyTail(open.host, tail.lines);
+    markActivity(
+      open.reg,
+      activityValue({
+        ...result,
+        source: "transcript",
+        lastWriteAt: tail.lastWriteAt,
+      }),
+    );
+    if (["responded", "detached"].includes(result.state))
+      closeWindow(open.reg.conversation_id);
+    else armQuiet(open);
+  };
+  const wake = (open) => {
+    clearTimeout(open.settle);
+    open.settle = setTimeout(() => void sample(open), settleMs);
+    open.settle.unref?.();
+  };
+  const attach = (open) => {
+    const name = path.basename(open.transcript);
+    const add = (target, handler) => {
+      try {
+        const watcher = watch(target, { persistent: false }, handler);
+        watcher.on("error", () => {});
+        open.watchers.push(watcher);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // The file may not exist yet; the parent directory tells us when it appears.
+    add(path.dirname(open.transcript), (_event, changed) => {
+      if (changed && changed !== name) return;
+      if (!open.file) open.file = add(open.transcript, () => wake(open));
+      wake(open);
+    });
+    open.file = add(open.transcript, () => wake(open));
+  };
+  const openWindow = async (reg, context) => {
+    if (stopped || !allowsActivity.get(reg.conversation_id)) return;
+    closeWindow(reg.conversation_id);
+    const host = hostOf(reg),
+      transcript = await resolveTranscript(host, reg).catch(() => null);
+    const open = { reg, host, transcript, watchers: [], ...context };
+    windows.set(reg.conversation_id, open);
+    transcripts.set(reg.conversation_id, transcript);
+    if (transcript) attach(open);
+    if (!open.watchers.length) {
+      // Hosts with no transcript (and unreachable ones) say so once, then the window closes.
+      markActivity(
+        reg,
+        activityValue({ state: "untracked", source: "process" }),
+      );
+      return closeWindow(reg.conversation_id);
+    }
+    if (!originAlive(reg)) return detach(reg, "process_gone");
+    await sample(open);
+    if (windows.has(reg.conversation_id)) armQuiet(open);
+  };
+  const endWindow = (id) => {
+    closeWindow(id);
+    activities.delete(id);
+    transcripts.delete(id);
   };
   const send = async (reg, event, beforeSend, signal) => {
     mark(reg, "queued");
@@ -623,10 +775,12 @@ async function daemon(c) {
       );
     deviceId = value.device_id;
     const old = registrations.get(value.conversation_id);
-    if (old && old.generation !== value.generation)
+    if (old && old.generation !== value.generation) {
+      endWindow(value.conversation_id);
       for (const consumer of consumers.values())
         if (consumer.conversationId === value.conversation_id)
           consumer.abort.abort();
+    }
     registrations.set(value.conversation_id, value);
     mark(value, "ready");
   };
@@ -643,8 +797,20 @@ async function daemon(c) {
       conversationId: reg.conversation_id,
       updated: item.session_updated_at,
     });
-    const snapshot = () =>
-      api(c.base, `/api/sessions/${item.session_id}/snapshot`);
+    let latest = null;
+    const snapshot = async () => {
+      const value = await api(c.base, `/api/sessions/${item.session_id}/snapshot`);
+      latest = value;
+      allowsActivity.set(reg.conversation_id, acceptsActivity(value));
+      const open = windows.get(reg.conversation_id);
+      // The round advanced, the response was published or the session closed: stop watching.
+      if (
+        open?.sessionId === item.session_id &&
+        (open.round !== value.current_round || open.status !== value.review_status)
+      )
+        closeWindow(reg.conversation_id);
+      return value;
+    };
     try {
       // An older server without discussion_protocol 1 still gets a final-decisions binding.
       const discussions =
@@ -704,7 +870,14 @@ async function daemon(c) {
                 }),
             })
               .then((sent) => {
-                if (sent) mark(reg, "sent");
+                if (sent) {
+                  mark(reg, "sent");
+                  void openWindow(reg, {
+                    sessionId: item.session_id,
+                    round: event.round,
+                    status: latest?.review_status,
+                  });
+                }
                 return sent;
               })
               .catch((error) => {
@@ -724,6 +897,8 @@ async function daemon(c) {
       });
       if (fatalAuth(error)) void authStop(error);
     } finally {
+      if (windows.get(reg.conversation_id)?.sessionId === item.session_id)
+        closeWindow(reg.conversation_id);
       consumers.delete(item.session_id);
       wakeups.delete(item.session_id);
     }
@@ -890,6 +1065,7 @@ async function daemon(c) {
         res.on("error", (error) => {
           listeners.delete(id);
           record(id).listener = false;
+          if (windows.has(id)) detach(reg, "listener_closed");
           note(reg, {
             stage: "listen",
             reason: "listener_absent",
@@ -901,6 +1077,7 @@ async function daemon(c) {
         req.on("close", () => {
           listeners.delete(id);
           record(id).listener = false;
+          if (windows.has(id)) detach(reg, "listener_closed");
           mark(reg, "unavailable");
         });
         void refresh();
@@ -924,6 +1101,7 @@ async function daemon(c) {
           conversation_count: registrations.size,
           conversations: [...registrations.values()].map((reg) => {
             const entry = record(reg.conversation_id);
+            const activity = activities.get(reg.conversation_id) ?? null;
             return {
               conversation_id: reg.conversation_id,
               adapter: reg.adapter,
@@ -936,6 +1114,14 @@ async function daemon(c) {
                   : null,
               lastError: entry.lastError,
               lastErrorAt: entry.lastErrorAt,
+              activity: activity && {
+                state: activity.state,
+                at: activity.at,
+                source: activity.source,
+                marker: activity.marker ?? null,
+                last_write_at: activity.last_write_at ?? null,
+                transcript: transcripts.get(reg.conversation_id) ?? null,
+              },
             };
           }),
         }),

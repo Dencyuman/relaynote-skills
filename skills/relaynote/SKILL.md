@@ -3,7 +3,7 @@ name: relaynote
 description: Publishes AI work as Relaynote review sessions and returns the reviewer's comments and decisions to the same conversation. Use when the user asks to connect Relaynote, report work for review, respond to Relaynote feedback, or when a Relaynote notification arrives.
 compatibility: Requires Node.js 22+, network access to the Relaynote server, and an MCP client that supports remote HTTP servers with OAuth.
 metadata:
-  version: "4.1.0"
+  version: "4.2.0"
   author: DENCYU Inc.
 ---
 

@@ -6,7 +6,27 @@
     "skillAgent": "codex",
     "delivery": "codex",
     "support": "verified",
-    "docs": "https://developers.openai.com/codex/cli/"
+    "docs": "https://developers.openai.com/codex/cli/",
+    "transcript": {
+      "kind": "jsonl",
+      "path": "{codex_home}/sessions/*/*/*/rollout-*{thread}*.jsonl",
+      "complete": {
+        "type": "event_msg",
+        "field": "payload.type",
+        "equals": [
+          "task_complete"
+        ]
+      },
+      "abort": {
+        "type": "event_msg",
+        "field": "payload.type",
+        "equals": [
+          "turn_aborted",
+          "error"
+        ]
+      },
+      "idFrom": "thread"
+    }
   },
   {
     "id": "claude-code",
@@ -15,7 +35,28 @@
     "skillAgent": "claude-code",
     "delivery": "monitor",
     "support": "verified",
-    "docs": "https://code.claude.com/docs/en/hooks"
+    "docs": "https://code.claude.com/docs/en/hooks",
+    "transcript": {
+      "kind": "jsonl",
+      "path": "{home}/.claude/projects/{slug}/{thread}.jsonl",
+      "slug": "absolute",
+      "complete": {
+        "type": "assistant",
+        "field": "message.stop_reason",
+        "equals": [
+          "end_turn",
+          "stop_sequence"
+        ]
+      },
+      "abort": {
+        "type": "assistant",
+        "field": "isApiErrorMessage",
+        "equals": [
+          true
+        ]
+      },
+      "idFrom": "thread"
+    }
   },
   {
     "id": "cursor-cli",
@@ -24,7 +65,29 @@
     "skillAgent": "cursor",
     "delivery": "monitor",
     "support": "verified",
-    "docs": "https://cursor.com/docs/cli/overview"
+    "docs": "https://cursor.com/docs/cli/overview",
+    "transcript": {
+      "kind": "jsonl",
+      "path": "{home}/.cursor/projects/{slug}/agent-transcripts/{thread}/{thread}.jsonl",
+      "slug": "relative",
+      "complete": {
+        "type": "turn_ended",
+        "field": "status",
+        "equals": [
+          "success"
+        ]
+      },
+      "abort": {
+        "type": "turn_ended",
+        "field": "status",
+        "equals": [
+          "error",
+          "cancelled",
+          "aborted"
+        ]
+      },
+      "idFrom": "thread"
+    }
   },
   {
     "id": "orca",
@@ -33,7 +96,27 @@
     "skillAgent": "codex",
     "delivery": "orca",
     "support": "verified",
-    "docs": "https://orca.so"
+    "docs": "https://orca.so",
+    "transcript": {
+      "kind": "jsonl",
+      "path": "{codex_home}/sessions/*/*/*/rollout-*{thread}*.jsonl",
+      "complete": {
+        "type": "event_msg",
+        "field": "payload.type",
+        "equals": [
+          "task_complete"
+        ]
+      },
+      "abort": {
+        "type": "event_msg",
+        "field": "payload.type",
+        "equals": [
+          "turn_aborted",
+          "error"
+        ]
+      },
+      "idFrom": "thread"
+    }
   },
   {
     "id": "opencode",
@@ -42,7 +125,8 @@
     "skillAgent": "opencode",
     "delivery": "http",
     "support": "documented",
-    "docs": "https://opencode.ai/docs/server/"
+    "docs": "https://opencode.ai/docs/server/",
+    "transcript": null
   },
   {
     "id": "qwen-code",
@@ -51,7 +135,8 @@
     "skillAgent": "qwen-code",
     "delivery": "monitor",
     "support": "documented",
-    "docs": "https://qwenlm.github.io/qwen-code-docs/"
+    "docs": "https://qwenlm.github.io/qwen-code-docs/",
+    "transcript": null
   },
   {
     "id": "cursor",
@@ -60,7 +145,8 @@
     "skillAgent": "cursor",
     "delivery": "hook",
     "support": "documented",
-    "docs": "https://cursor.com/docs/hooks"
+    "docs": "https://cursor.com/docs/hooks",
+    "transcript": null
   },
   {
     "id": "github-copilot",
@@ -69,7 +155,8 @@
     "skillAgent": "github-copilot",
     "delivery": "acp",
     "support": "documented",
-    "docs": "https://docs.github.com/en/copilot/how-tos/copilot-cli"
+    "docs": "https://docs.github.com/en/copilot/how-tos/copilot-cli",
+    "transcript": null
   },
   {
     "id": "goose",
@@ -78,7 +165,8 @@
     "skillAgent": "goose",
     "delivery": "hook",
     "support": "documented",
-    "docs": "https://block.github.io/goose/docs/"
+    "docs": "https://block.github.io/goose/docs/",
+    "transcript": null
   },
   {
     "id": "amp",
@@ -87,7 +175,8 @@
     "skillAgent": "amp",
     "delivery": "stdin",
     "support": "documented",
-    "docs": "https://ampcode.com/docs"
+    "docs": "https://ampcode.com/docs",
+    "transcript": null
   },
   {
     "id": "kiro-cli",
@@ -96,7 +185,8 @@
     "skillAgent": "kiro-cli",
     "delivery": "acp",
     "support": "documented",
-    "docs": "https://kiro.dev/docs/cli/"
+    "docs": "https://kiro.dev/docs/cli/",
+    "transcript": null
   },
   {
     "id": "continue",
@@ -105,7 +195,8 @@
     "skillAgent": "continue",
     "delivery": "http",
     "support": "documented",
-    "docs": "https://docs.continue.dev/"
+    "docs": "https://docs.continue.dev/",
+    "transcript": null
   },
   {
     "id": "crush",
@@ -114,7 +205,8 @@
     "skillAgent": "crush",
     "delivery": "http",
     "support": "documented",
-    "docs": "https://github.com/charmbracelet/crush"
+    "docs": "https://github.com/charmbracelet/crush",
+    "transcript": null
   },
   {
     "id": "devin",
@@ -123,7 +215,26 @@
     "skillAgent": null,
     "delivery": "http",
     "support": "documented",
-    "docs": "https://docs.devin.ai/api-reference/v1/sessions/send-a-message-to-an-existing-devin-session"
+    "docs": "https://docs.devin.ai/api-reference/v1/sessions/send-a-message-to-an-existing-devin-session",
+    "transcript": {
+      "kind": "api",
+      "path": "https://api.devin.ai/v1/session/{thread}",
+      "keyEnv": "DEVIN_AUTHORIZATION",
+      "complete": {
+        "field": "status_enum",
+        "equals": [
+          "finished"
+        ]
+      },
+      "abort": {
+        "field": "status_enum",
+        "equals": [
+          "blocked",
+          "expired"
+        ]
+      },
+      "idFrom": "thread"
+    }
   },
   {
     "id": "gemini-cli",
@@ -132,7 +243,8 @@
     "skillAgent": "gemini-cli",
     "delivery": "hook",
     "support": "conditional",
-    "docs": "https://geminicli.com/docs/hooks/reference/"
+    "docs": "https://geminicli.com/docs/hooks/reference/",
+    "transcript": null
   },
   {
     "id": "trae",
@@ -141,7 +253,8 @@
     "skillAgent": "trae",
     "delivery": "hook",
     "support": "conditional",
-    "docs": "https://docs.trae.ai/"
+    "docs": "https://docs.trae.ai/",
+    "transcript": null
   },
   {
     "id": "antigravity",
@@ -150,7 +263,8 @@
     "skillAgent": "antigravity",
     "delivery": "http",
     "support": "conditional",
-    "docs": "https://antigravity.google/docs/"
+    "docs": "https://antigravity.google/docs/",
+    "transcript": null
   },
   {
     "id": "augment",
@@ -159,7 +273,8 @@
     "skillAgent": "augment",
     "delivery": "hook",
     "support": "conditional",
-    "docs": "https://docs.augmentcode.com/cli/hooks"
+    "docs": "https://docs.augmentcode.com/cli/hooks",
+    "transcript": null
   },
   {
     "id": "junie",
@@ -168,7 +283,8 @@
     "skillAgent": "junie",
     "delivery": "hook",
     "support": "conditional",
-    "docs": "https://www.jetbrains.com/help/junie/"
+    "docs": "https://www.jetbrains.com/help/junie/",
+    "transcript": null
   },
   {
     "id": "kilo",
@@ -177,7 +293,8 @@
     "skillAgent": "kilo",
     "delivery": "http",
     "support": "conditional",
-    "docs": "https://kilo.ai/docs/"
+    "docs": "https://kilo.ai/docs/",
+    "transcript": null
   },
   {
     "id": "cline",
@@ -186,7 +303,8 @@
     "skillAgent": "cline",
     "delivery": "http",
     "support": "conditional",
-    "docs": "https://docs.cline.bot/cline-cli/overview"
+    "docs": "https://docs.cline.bot/cline-cli/overview",
+    "transcript": null
   },
   {
     "id": "zed",
@@ -195,6 +313,7 @@
     "skillAgent": null,
     "delivery": "acp",
     "support": "conditional",
-    "docs": "https://zed.dev/docs/ai/external-agents"
+    "docs": "https://zed.dev/docs/ai/external-agents",
+    "transcript": null
   }
 ]

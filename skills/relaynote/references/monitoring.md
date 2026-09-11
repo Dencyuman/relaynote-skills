@@ -12,6 +12,7 @@
 - Other hosts
 - Verify before ending the turn
 - Every later report
+- Activity
 - Failures
 - Runtime lifecycle: update, stop, revoked device
 
@@ -158,6 +159,28 @@ line must also have appeared. If any check fails, return to the common steps.
   again, then `attach_agent_session(..., replace_generation: true)` for open sessions.
 - Owner-assigned tasks arrive as sessions: `get_agent_task(session_id, conversation_id, generation)`,
   verify, then call again with `acknowledge: true`, and work in that session.
+
+## Activity
+
+Between the moment a decision or discussion is delivered to this conversation
+and the moment the conversation responds, the runtime watches the host's own
+transcript file and tells the session what the AI is doing. It runs only inside
+that window: never before a delivery, never after the response, and never as a
+poll of the server. Only changes are reported.
+
+| State | Means |
+| --- | --- |
+| `working` | The transcript is still growing: the AI is on the turn. |
+| `quiet` | Nothing was written for 10 minutes. The next write reports `working` again. |
+| `responded` | The turn completed (Claude Code `end_turn`, Codex `task_complete`, Cursor `turn_ended`). |
+| `detached` | The listener or the pinned process is gone, or the turn was aborted. |
+| `untracked` | This host exposes no transcript; reported once when the window opens. |
+
+Tracked in this version: Claude Code, Codex, Codex inside Orca and Cursor CLI.
+Every other host, Devin included, reports `untracked`. `node RUNTIME status`
+shows the last state per conversation under `activity`, with the file it was
+read from. A server that does not support activity is simply never sent any:
+delivery and decisions are unaffected.
 
 ## Failures
 

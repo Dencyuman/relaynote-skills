@@ -1,3 +1,23 @@
+## 4.2.0
+
+- Between a delivered decision and this conversation's response the runtime watches the host's own
+  transcript file and reports the AI's liveness to the session: `working`, `quiet`, `responded`,
+  `detached` or `untracked`. Only transitions are sent, as an `activity` object on the existing
+  device `/state` post; nothing polls the server and no timer talks to it.
+- Host formats live in `lib/activity.mjs` with one pure classifier each, and `lib/agents.json`
+  carries a `transcript` descriptor per host: Claude Code (`~/.claude/projects/<slug>/<session>.jsonl`,
+  complete on the newest `assistant` entry with `stop_reason: end_turn`), Codex and Orca
+  (`$CODEX_HOME/sessions/**/rollout-*<thread>*.jsonl`, complete on `task_complete`, aborted on
+  `turn_aborted`), Cursor CLI (`~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl`,
+  complete on the `turn_ended` trailer). Every other host, Devin included, reports `untracked` once.
+- The window closes when the round advances, the response is published, the session ends or the
+  turn completed; a 10-minute local inactivity timer reports `quiet` once and the next write
+  reports `working` again. A lost listener or a dead pinned process reports `detached`.
+- `activity` is sent only to a server that advertises `agent_activity: 1` together with the
+  delivery-reason capability; an older server receives exactly the 4.1.0 payload.
+- `status` gains `activity` per conversation with the state, its time, source, marker, the
+  transcript's last write and the watched file.
+
 ## 4.1.0
 
 - Identify an Orca conversation by its terminal, not by the processes serving it. The generation
