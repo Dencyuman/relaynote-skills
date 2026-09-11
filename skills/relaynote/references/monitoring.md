@@ -109,8 +109,10 @@ When the thread belongs to a known local app-server, add `--remote ws://…` or
 ## Codex inside Orca
 
 Steps 1–3 only, with `--adapter orca`. Requires `ORCA_TERMINAL_HANDLE` and
-`CODEX_THREAD_ID` set in THIS terminal. The runtime pins the terminal, waits for
-idle, and submits the notification there. If `CLAUDECODE` is set, the host is
+`CODEX_THREAD_ID` set in THIS terminal. The runtime pins the conversation
+(incarnation, tab, worktree and thread), re-resolves the terminal before every
+send, waits for idle, and submits the notification there. Restarting Codex or
+reconnecting Orca does not break it. If `CLAUDECODE` is set, the host is
 Claude Code even inside Orca: use the Claude Code recipe.
 
 ## Cursor CLI
@@ -164,9 +166,29 @@ line must also have appeared. If any check fails, return to the common steps.
 | `register` prints a different `conversation_id` than before | The thread changed. Use the new ids; do not reuse old ones. |
 | `register_agent` rejects the code | It expired (10 min). Run `register` again. |
 | `status` shows `connected: false` | `node RUNTIME start`, then verify again. |
-| `listen` exits with `Host listener unavailable` | Another listener is attached, or the runtime stopped. `status`, then retry. |
+| `listen` prints `{"error":"not_registered"}` | This conversation was never registered on this account. Run the common steps again. |
+| `listen` prints `{"error":"wrong_adapter"}` | This conversation uses `codex`, `orca`, `http` or `bridge`; it needs no listener. |
+| `listen` prints `{"error":"already_listening"}` | Another listener is attached. `node RUNTIME status`, then retry. |
 | 403 on upload | Run `login` again; the grant predates the upload scope. |
 | Session page says the AI is not receiving | The listener is not running. Start it; do not open a new conversation. |
+
+`node RUNTIME status` prints one row per conversation with `state`, `listener`,
+`lastError` and `lastErrorAt`; every failure also writes one line to
+`~/.local/share/relaynote/accounts/*/runtime.log`. The `lastError` starts with
+the reason:
+
+| Reason | Means | Do |
+| --- | --- | --- |
+| `identity` | The originating Orca terminal (incarnation, tab or worktree) is gone, or no Codex runs in its worktree. Nothing was sent. | Reopen the original terminal, or register and pair this conversation again. |
+| `busy` | The terminal never accepted input within 10 minutes. Nothing was sent. | Leave the terminal idle; the server re-sends. |
+| `transport_unknown` | Bytes may have reached the conversation. Never replayed automatically. | Read the original conversation before doing anything. |
+| `listener_absent` | No listener was attached; the delivery stayed `waiting`. | `node RUNTIME listen --conversation CONVERSATION_ID` again. |
+| `auth` | The stored grant is dead. The runtime stopped reconnecting and set every conversation to `auth_required`. | `node CLI login --server ORIGIN`, then `node RUNTIME start`, register and pair again. |
+
+A re-register from the same Orca terminal keeps the same `generation`, even
+after Codex restarted or Orca re-issued the terminal handle: already attached
+sessions stay attached. The `generation` changes only when the conversation
+itself changes (different tab, incarnation, worktree or thread).
 
 ## Runtime lifecycle: update, stop, revoked device
 

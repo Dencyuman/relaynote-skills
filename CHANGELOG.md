@@ -1,3 +1,31 @@
+## 4.1.0
+
+- Identify an Orca conversation by its terminal, not by the processes serving it. The generation
+  fingerprint covers `(incarnationId, tabId, worktreeId)` and the thread; a re-issued `term_…`
+  handle or a restarted Codex is adopted and persisted instead of refused, and re-registering the
+  same terminal keeps the generation, so attached sessions are no longer orphaned.
+- Before each Orca send the terminal is re-resolved through `orca terminal list --json` (falling
+  back to the stored handle) and required to be connected, writable and not orphaned with the same
+  incarnation and tab. A different tab, incarnation or worktree is still an outright refusal.
+- Every delivery failure reports a reason: `identity`, `busy`, `transport_unknown`,
+  `listener_absent` or `auth`. The reason is sent with `failed` only when the session snapshot
+  advertises `delivery_reason: 1` or `delivery_protocol` 4, and logged either way.
+- A busy Orca terminal now has a 10-minute deadline with 1/2/5/10 s backoff instead of blocking its
+  conversation forever, and a send can no longer end silently after `sending` was reported.
+- A decision whose delivery the server re-minted is claimed and delivered again: the seen file
+  records the delivery attempt, not only the decision id.
+- A host-task delivery with no listener attached stays `waiting` instead of failing, and is
+  delivered when the listener attaches.
+- `AuthError` carries `.status = 401`, so a dead grant stops the daemon instead of retrying
+  forever. The daemon then reports state `auth_required` for every registered conversation and logs
+  one "run login again" line.
+- Failures are visible: one stderr line per failure in `runtime.log`, `status` gains
+  `conversations[]` with per-conversation state, listener, last error and time, `/listen` answers
+  `not_registered`, `wrong_adapter` or `already_listening`, and `listen` prints that body before
+  exiting 1.
+- The daemon survives a single delivery's fault: listener responses have an `error` handler and
+  uncaught exceptions and rejections are logged instead of ending every conversation.
+
 ## 4.0.0
 
 - Restructure the skill around the Agent Skills specification and Anthropic's
