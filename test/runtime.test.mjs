@@ -487,3 +487,225 @@ test("separate CLI processes serialize refresh and reuse the rotated credentials
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("reports the AI's own liveness as transitions between delivery and response", async () => {
+  const dir = await fs.mkdtemp("/tmp/rn-activity-runtime-"),
+    auth = path.join(dir, "auth"),
+    home = path.join(dir, "home");
+  await fs.mkdir(auth);
+  const workspace = await fs.realpath(dir),
+    slug = workspace.replace(/[^A-Za-z0-9-]/g, "-"),
+    projects = path.join(home, ".claude/projects", slug);
+  await fs.mkdir(projects, { recursive: true });
+  const transcript = (thread) => path.join(projects, thread + ".jsonl");
+  const append = (thread, entry) =>
+    fs.appendFile(transcript(thread), JSON.stringify(entry) + "\n");
+  const working = {
+    type: "assistant",
+    message: { role: "assistant", stop_reason: "tool_use", content: [] },
+  };
+  const done = {
+    type: "assistant",
+    message: { role: "assistant", stop_reason: "end_turn", content: [] },
+  };
+  let runtime,
+    capability = false;
+  const sockets = new Set(),
+    conversations = new Map(),
+    listeners = [],
+    sessions = new Map(),
+    posted = [];
+  const device = randomUUID();
+  let inbox = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = "";
+    for await (const b of req) raw += b;
+    const body = raw ? JSON.parse(raw) : {};
+    res.setHeader("Content-Type", "application/json");
+    if (req.url === "/api/agents/identity")
+      return res.end(JSON.stringify({ owner_id: "owner" }));
+    if (req.url === "/api/agents/register") {
+      const value = {
+        conversation_id:
+          conversations.get(body.origin_id)?.conversation_id ?? randomUUID(),
+        device_id: device,
+        generation: body.generation,
+      };
+      conversations.set(body.origin_id, value);
+      return res.end(JSON.stringify(value));
+    }
+    if (req.url.endsWith("/ticket")) return res.end('{"ticket":"test"}');
+    if (req.url.endsWith("/inbox")) return res.end(JSON.stringify({ items: inbox }));
+    if (req.url.endsWith("/guard")) return res.end('{"valid":true}');
+    if (req.url.endsWith("/state")) {
+      posted.push(structuredClone(body));
+      return res.end('{"ok":true}');
+    }
+    if (req.url.endsWith("/snapshot")) {
+      const value = sessions.get(req.url.split("/")[3]);
+      return res.end(
+        JSON.stringify({
+          session_id: value.id,
+          current_round: 1,
+          review_status: "changes_requested",
+          delivery_protocol: 4,
+          ...(capability ? { agent_activity: 1 } : {}),
+          updated_at: value.decided ? "t2" : "t1",
+          expires_at: new Date(Date.now() + 3600000).toISOString(),
+          latest_review: value.decided
+            ? {
+                id: value.decision,
+                round: 1,
+                decision: "changes_requested",
+                delivery: value.delivery,
+              }
+            : null,
+          open_comments: [],
+        }),
+      );
+    }
+    if (req.url.endsWith("/delivery")) {
+      const value = sessions.get(req.url.split("/")[3]);
+      if (body.action === "claim") return res.end(JSON.stringify(value.delivery));
+      if (["sending", "sent", "failed"].includes(body.action))
+        value.delivery = { ...value.delivery, status: body.action };
+      return res.end('{"ok":true}');
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  server.on("upgrade", (req, socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.on("data", (b) => {
+      if ((b[0] & 15) === 8) socket.end(Buffer.from([0x88, 0]));
+    });
+    const accept = createHash("sha1")
+      .update(
+        req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+      )
+      .digest("base64");
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\nSec-WebSocket-Protocol: relaynote\r\n\r\n`,
+    );
+    socket.write(frame({ type: "ready" }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await fs.writeFile(
+    path.join(auth, "auth.json"),
+    JSON.stringify({ base, apiKey: "unit-runtime-key" }),
+  );
+  const env = {
+    RELAYNOTE_RUNTIME_HOME: path.join(dir, "shared"),
+    RELAYNOTE_HOME: auth,
+    RELAYNOTE_ACTIVITY_HOME: home,
+    RELAYNOTE_ACTIVITY_QUIET_MS: "500",
+    RELAYNOTE_ACTIVITY_SETTLE_MS: "30",
+  };
+  // Every activity state this conversation reported, in order, without repeats.
+  const timeline = (id) =>
+    posted
+      .map((body) => body[id]?.activity?.state)
+      .filter((state, index, all) => state && state !== all[index - 1]);
+  const of = (id) => posted.findLast((body) => body[id]?.activity)?.[id].activity;
+  const deliver = async (reg, thread) => {
+    const session = randomUUID();
+    sessions.set(session, {
+      id: session,
+      decision: randomUUID(),
+      delivery: { delivery_id: session, status: "waiting" },
+      decided: true,
+    });
+    inbox = [
+      ...inbox,
+      {
+        ...reg,
+        session_id: session,
+        binding_id: thread.padEnd(32, "x").slice(0, 32),
+        current_round: 1,
+        session_updated_at: "t1",
+        request_status: "none",
+      },
+    ];
+    for (const socket of sockets) socket.write(frame({ type: "changed" }));
+    await until(() => sessions.get(session).delivery.status === "sent");
+    return session;
+  };
+  try {
+    const setup = await run(source, ["setup", "--accept-install"], env, dir);
+    runtime = JSON.parse(setup.out).runtime;
+    const regs = new Map();
+    for (const thread of ["thread-off", "thread-turn", "thread-quiet"]) {
+      await fs.writeFile(transcript(thread), JSON.stringify(working) + "\n");
+      const result = await run(
+        runtime,
+        ["register", "--adapter", "host-task", "--brand", "claude-code", "--thread", thread],
+        env,
+        dir,
+      );
+      assert.equal(result.code, 0, result.err);
+      const reg = JSON.parse(result.out);
+      regs.set(thread, reg);
+      const child = spawn(
+        process.execPath,
+        [runtime, "listen", "--conversation", reg.conversation_id],
+        { env: { ...process.env, ...env }, cwd: dir },
+      );
+      listeners.push(child);
+      await new Promise((resolve) => child.stdout.once("data", resolve));
+    }
+    // An older server never receives `activity`, however live the transcript is.
+    const off = regs.get("thread-off");
+    await deliver(off, "thread-off");
+    await append("thread-off", done);
+    await delay(300);
+    assert.deepEqual(timeline(off.conversation_id), []);
+    assert.equal(
+      posted.some((body) => JSON.stringify(body).includes("activity")),
+      false,
+      "no activity without the capability flag",
+    );
+    capability = true;
+    // Delivery opens the window: the transcript is mid-turn, so the AI is working. The completed
+    // turn is one further transition, and nothing else is sent.
+    const turn = regs.get("thread-turn");
+    await deliver(turn, "thread-turn");
+    await until(() => timeline(turn.conversation_id).length === 1);
+    assert.deepEqual(timeline(turn.conversation_id), ["working"]);
+    await append("thread-turn", done);
+    await until(() => timeline(turn.conversation_id).length === 2);
+    assert.deepEqual(timeline(turn.conversation_id), ["working", "responded"]);
+    const responded = of(turn.conversation_id);
+    assert.equal(responded.source, "transcript");
+    assert.equal(responded.marker, "end_turn");
+    assert.match(responded.at, /^\d{4}-\d\d-\d\dT/);
+    assert.match(responded.last_write_at, /^\d{4}-\d\d-\d\dT/);
+    // A silent transcript yields exactly one `quiet` after the local inactivity timer.
+    const quiet = regs.get("thread-quiet");
+    await deliver(quiet, "thread-quiet");
+    await until(() => timeline(quiet.conversation_id).length === 2);
+    assert.deepEqual(timeline(quiet.conversation_id), ["working", "quiet"]);
+    // The next write reports `working` again.
+    await append("thread-quiet", working);
+    await until(() => timeline(quiet.conversation_id).length === 3);
+    assert.deepEqual(timeline(quiet.conversation_id), ["working", "quiet", "working"]);
+    const detail = JSON.parse((await run(runtime, ["status"], env, dir)).out);
+    const row = detail.conversations.find(
+      (x) => x.conversation_id === turn.conversation_id,
+    );
+    assert.equal(row.activity.state, "responded");
+    assert.equal(row.activity.transcript, transcript("thread-turn"));
+    assert.equal(
+      detail.conversations.find((x) => x.conversation_id === off.conversation_id)
+        .activity,
+      null,
+    );
+  } finally {
+    for (const p of listeners) p.kill();
+    if (runtime) await run(runtime, ["stop"], env, dir);
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => server.close(resolve));
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
