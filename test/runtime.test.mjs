@@ -205,7 +205,20 @@ test("installs independent runtime once, multiplexes two host conversations and 
     }
     await until(() => streams.every((x) => x.length));
     await until(() => upgrades === 1);
-    const counts = [snapshots, inboxReads];
+    // Listener attach and the socket's ready frame each trigger one inbox refresh; wait until
+    // those have drained before measuring, otherwise a slow CI runner sees one land inside the
+    // idle window and the no-polling assertion fails for the wrong reason.
+    const settled = async () => {
+      let last = null;
+      for (let i = 0; i < 25; i++) {
+        const now = [snapshots, inboxReads];
+        if (last && now[0] === last[0] && now[1] === last[1]) return now;
+        last = now;
+        await delay(200);
+      }
+      return last;
+    };
+    const counts = await settled();
     await delay(300);
     assert.deepEqual(
       [snapshots, inboxReads],
