@@ -1,5 +1,9 @@
 import {accessToken,AuthError} from './auth.mjs';
 export class StaleDelivery extends Error {}
+/** The five delivery-failure categories the server stores verbatim (<=300 chars). */
+export const reasonText = error => `${error?.reason ?? 'transport_unknown'}: ${String(error?.message ?? error)}`.replace(/\s+/g,' ').slice(0,300);
+/** `reason` is only accepted by a server that advertises it; an older `.strict()` schema would 400. */
+export const acceptsReason = snapshot => snapshot?.delivery_reason===1 || Number(snapshot?.delivery_protocol)>=4;
 export function deliveryClient(sessionId,bindingId,base) {
   return async (action,data={}) => {
     const auth=await accessToken();
@@ -16,7 +20,7 @@ export function deliveryClient(sessionId,bindingId,base) {
 }
 
 /** Claim before delivery, revalidate at the actual send point, and never replay an ambiguous send. */
-export async function deliverDecision(event,{post,snapshot,send}) {
+export async function deliverDecision(event,{post,snapshot,send,onFailure=()=>{}}) {
   const kind=event.event_kind==='discussion'?{event_kind:'discussion'}:{};
   let claim;
   try { claim=await post('claim',{decision_id:event.decision_id,...kind}); }
@@ -24,9 +28,10 @@ export async function deliverDecision(event,{post,snapshot,send}) {
   if(claim.status!=='waiting')return false;
   event.delivery_id=claim.delivery_id;
   const ids={decision_id:event.decision_id,delivery_id:event.delivery_id,...kind};
-  let sending=false;
+  let sending=false,reasonSupported=null;
+  const look=async()=>{const current=await snapshot();reasonSupported=acceptsReason(current);return current};
   const beforeSend=async()=>{
-    const current=await snapshot();
+    const current=await look();
     if(current.current_round!==event.round)return false;
     if(event.event_kind==='discussion') {
       if(current.review_status!=='in_review' || !(current.discussions??[]).some(d=>d.id===event.discussion_id && d.reviewRound===event.round))return false;
@@ -46,7 +51,11 @@ export async function deliverDecision(event,{post,snapshot,send}) {
     return true;
   }catch(error){
     // A transport error may follow acceptance. Preserve that uncertainty; never replay automatically.
-    await post('failed',ids).catch(()=>{});
+    // The reason says which kind of failure it was, so `failed` is never a silent dead end.
+    const reason=reasonText(error);
+    onFailure(reason,error);
+    if(reasonSupported===null)await look().catch(()=>{});
+    await post('failed',{...ids,...(reasonSupported?{reason}:{})}).catch(()=>{});
     throw error;
   }
 }
