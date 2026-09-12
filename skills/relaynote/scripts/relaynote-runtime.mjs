@@ -24,10 +24,10 @@ import { deliveryClient, deliverDecision, reasonText } from "./lib/delivery.mjs"
 import {
   acceptsActivity,
   activityValue,
-  classifyTail,
+  baselineOf,
   hostOf,
-  readTail,
   resolveTranscript,
+  sampleSince,
 } from "./lib/activity.mjs";
 const entry = fileURLToPath(import.meta.url),
   root = path.resolve(
@@ -573,7 +573,13 @@ async function daemon(c) {
   // advertise the capability is never sent `activity` at all.
   const markActivity = (reg, value) => {
     if (stopped || !allowsActivity.get(reg.conversation_id)) return;
-    if (activities.get(reg.conversation_id)?.state === value.state) return;
+    const current = activities.get(reg.conversation_id);
+    // Unchanged state: keep the newest `last_write_at` locally for `status`, send nothing. `at`
+    // stays the moment the state was entered, which is what a transition means.
+    if (current?.state === value.state) {
+      activities.set(reg.conversation_id, { ...current, ...value, at: current.at });
+      return;
+    }
     activities.set(reg.conversation_id, value);
     compose(
       reg,
@@ -617,31 +623,55 @@ async function daemon(c) {
           state: "quiet",
           source: "transcript",
           lastWriteAt: open.lastWriteAt,
+          baselineAt: open.baselineAt,
         }),
       );
     }, quietMs);
     open.quiet.unref?.();
   };
+  // Only what the AI wrote AFTER the decision was delivered says anything about this turn: the
+  // tail at the moment the window opens still ends with the previous turn, whose completion
+  // marker would otherwise be read as an instant `responded`.
   const sample = async (open) => {
-    let tail;
+    let read;
     try {
-      tail = await readTail(open.transcript);
+      read = await sampleSince(open.host, open.transcript, open.baseline);
     } catch {
       return;
     }
-    open.lastWriteAt = tail.lastWriteAt;
-    const result = classifyTail(open.host, tail.lines);
+    if (read.reset) {
+      // Truncated or rotated under us: the baseline is meaningless, so all of it is new.
+      log({
+        conversation: open.reg.conversation_id,
+        session: open.sessionId,
+        stage: "activity",
+        reason: "transcript_reset",
+        message: `${open.transcript} shrank below baseline ${open.baseline}`,
+      });
+      open.baseline = 0;
+      try {
+        read = await sampleSince(open.host, open.transcript, 0);
+      } catch {
+        return;
+      }
+    }
+    open.lastWriteAt = read.lastWriteAt;
+    // Nothing appended yet: the server already shows `working` from the MCP ack, so say nothing.
+    if (!read.result) return armQuiet(open);
     markActivity(
       open.reg,
       activityValue({
-        ...result,
+        ...read.result,
         source: "transcript",
-        lastWriteAt: tail.lastWriteAt,
+        lastWriteAt: read.lastWriteAt,
+        baselineAt: open.baselineAt,
       }),
     );
-    if (["responded", "detached"].includes(result.state))
-      closeWindow(open.reg.conversation_id);
-    else armQuiet(open);
+    // `responded` does not close the window: the same round can get a second reply, and only the
+    // server (round advanced / response published / session closed) knows the work is over.
+    if (read.result.state === "detached")
+      return closeWindow(open.reg.conversation_id);
+    armQuiet(open);
   };
   const wake = (open) => {
     clearTimeout(open.settle);
@@ -674,6 +704,12 @@ async function daemon(c) {
     const host = hostOf(reg),
       transcript = await resolveTranscript(host, reg).catch(() => null);
     const open = { reg, host, transcript, watchers: [], ...context };
+    // The baseline is taken before the watchers are attached, so a write that lands in between is
+    // counted as new rather than missed.
+    const base = transcript ? await baselineOf(transcript) : null;
+    open.baseline = base?.bytes ?? 0;
+    open.baselineMtime = base?.mtime ?? null;
+    open.baselineAt = new Date().toISOString();
     windows.set(reg.conversation_id, open);
     transcripts.set(reg.conversation_id, transcript);
     if (transcript) attach(open);
@@ -1120,6 +1156,7 @@ async function daemon(c) {
                 source: activity.source,
                 marker: activity.marker ?? null,
                 last_write_at: activity.last_write_at ?? null,
+                baseline_at: activity.baseline_at ?? null,
                 transcript: transcripts.get(reg.conversation_id) ?? null,
               },
             };

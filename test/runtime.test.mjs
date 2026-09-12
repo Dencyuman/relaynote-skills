@@ -421,7 +421,7 @@ test("updates require the exact expected version and reject downgrades or live r
       dir,
     );
     assert.equal(updated.code, 0, updated.err);
-    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "4.2.0");
+    assert.equal(JSON.parse(await fs.readFile(manifest)).version, "4.2.1");
     await fs.writeFile(
       manifest,
       JSON.stringify({ version: "9.0.0", protocol: 1 }),
@@ -650,7 +650,12 @@ test("reports the AI's own liveness as transitions between delivery and response
     runtime = JSON.parse(setup.out).runtime;
     const regs = new Map();
     for (const thread of ["thread-off", "thread-turn", "thread-quiet"]) {
-      await fs.writeFile(transcript(thread), JSON.stringify(working) + "\n");
+      // The transcript already ends with the PREVIOUS turn's completion when the decision is
+      // delivered, which is what production always looks like.
+      await fs.writeFile(
+        transcript(thread),
+        [working, done].map((e) => JSON.stringify(e) + "\n").join(""),
+      );
       const result = await run(
         runtime,
         ["register", "--adapter", "host-task", "--brand", "claude-code", "--thread", thread],
@@ -680,10 +685,16 @@ test("reports the AI's own liveness as transitions between delivery and response
       "no activity without the capability flag",
     );
     capability = true;
-    // Delivery opens the window: the transcript is mid-turn, so the AI is working. The completed
-    // turn is one further transition, and nothing else is sent.
+    // Delivery opens the window and takes a baseline. The tail at that moment is the previous
+    // turn's `end_turn`, and it must produce no transcript activity at all — the server already
+    // shows `working` from the MCP ack.
     const turn = regs.get("thread-turn");
     await deliver(turn, "thread-turn");
+    await delay(300);
+    assert.deepEqual(timeline(turn.conversation_id), [], "no state from the pre-baseline tail");
+    assert.equal(of(turn.conversation_id), undefined);
+    // The first write after the delivery is this turn, so: working, then its own completion.
+    await append("thread-turn", working);
     await until(() => timeline(turn.conversation_id).length === 1);
     assert.deepEqual(timeline(turn.conversation_id), ["working"]);
     await append("thread-turn", done);
@@ -694,21 +705,47 @@ test("reports the AI's own liveness as transitions between delivery and response
     assert.equal(responded.marker, "end_turn");
     assert.match(responded.at, /^\d{4}-\d\d-\d\dT/);
     assert.match(responded.last_write_at, /^\d{4}-\d\d-\d\dT/);
-    // A silent transcript yields exactly one `quiet` after the local inactivity timer.
+    assert.match(responded.baseline_at, /^\d{4}-\d\d-\d\dT/);
+    // `responded` does not close the window: the same round can carry a second reply, and the
+    // watcher is still attached to report it.
+    await append("thread-turn", working);
+    await until(() => timeline(turn.conversation_id).length === 3);
+    await append("thread-turn", done);
+    await until(() => timeline(turn.conversation_id).length === 4);
+    assert.deepEqual(timeline(turn.conversation_id), [
+      "working",
+      "responded",
+      "working",
+      "responded",
+    ]);
+    // A delivery for a newer decision replaces the baseline: the `end_turn` now at the tail is
+    // pre-baseline again, and only the next write reports anything.
+    await deliver(turn, "thread-turn-2");
+    await delay(300);
+    assert.equal(timeline(turn.conversation_id).length, 4);
+    await append("thread-turn", working);
+    await until(() => timeline(turn.conversation_id).length === 5);
+    assert.deepEqual(timeline(turn.conversation_id).at(-1), "working");
+    // The window outlives `responded`, so the local inactivity timer still governs it.
+    await until(() => timeline(turn.conversation_id).at(-1) === "quiet");
+    // A silent transcript yields exactly one `quiet` after the local inactivity timer, with no
+    // transcript-derived state before it.
     const quiet = regs.get("thread-quiet");
     await deliver(quiet, "thread-quiet");
-    await until(() => timeline(quiet.conversation_id).length === 2);
-    assert.deepEqual(timeline(quiet.conversation_id), ["working", "quiet"]);
-    // The next write reports `working` again.
+    await until(() => timeline(quiet.conversation_id).length === 1);
+    assert.deepEqual(timeline(quiet.conversation_id), ["quiet"]);
+    // The next write reports `working`.
     await append("thread-quiet", working);
-    await until(() => timeline(quiet.conversation_id).length === 3);
-    assert.deepEqual(timeline(quiet.conversation_id), ["working", "quiet", "working"]);
+    await until(() => timeline(quiet.conversation_id).length === 2);
+    assert.deepEqual(timeline(quiet.conversation_id), ["quiet", "working"]);
     const detail = JSON.parse((await run(runtime, ["status"], env, dir)).out);
     const row = detail.conversations.find(
       (x) => x.conversation_id === turn.conversation_id,
     );
-    assert.equal(row.activity.state, "responded");
+    assert.equal(row.activity.state, "quiet");
     assert.equal(row.activity.transcript, transcript("thread-turn"));
+    assert.match(row.activity.baseline_at, /^\d{4}-\d\d-\d\dT/);
+    assert.match(row.activity.last_write_at, /^\d{4}-\d\d-\d\dT/);
     assert.equal(
       detail.conversations.find((x) => x.conversation_id === off.conversation_id)
         .activity,
