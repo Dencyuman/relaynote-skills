@@ -1,3 +1,23 @@
+## 4.2.1
+
+- Fix the activity window reporting `responded` the instant a decision was delivered. The window
+  classified the transcript as it stood at that moment, and the tail then still ends with the
+  AI's PREVIOUS turn — a Claude Code `end_turn`, a Codex `task_complete`, a Cursor `turn_ended` —
+  so the session showed a false 「返答済み」 with a `last_write_at` from minutes before the
+  delivery, and, because the window closed on `responded`, no further transcript activity was
+  reported for the rest of the turn while the AI was visibly writing.
+- The window now records the transcript's byte length when it opens and classifies only the lines
+  appended after that baseline. Nothing appended means no transcript-derived state at all; the
+  first write after the delivery is `working`, and `responded` or `detached` needs a completion
+  marker written after the baseline (for Codex, a `task_complete` that follows a `task_started` of
+  its own). A file that shrinks below the baseline is treated as rotated, logged once and re-read
+  from the start.
+- `responded` no longer closes the window. The same round can carry a second reply, and only the
+  server — round advanced, response published, session closed — or the delivery of a newer
+  decision, which takes a fresh baseline, ends the watch.
+- `status` reports `baseline_at` per conversation, the moment the current window opened, and keeps
+  `last_write_at` current while the state itself is unchanged.
+
 ## 4.2.0
 
 - Between a delivered decision and this conversation's response the runtime watches the host's own

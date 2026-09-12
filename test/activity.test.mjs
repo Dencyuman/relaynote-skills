@@ -10,11 +10,13 @@ process.env.RELAYNOTE_ACTIVITY_HOME = path.join(dir, "home");
 process.env.CODEX_HOME = path.join(dir, "home", ".codex");
 const {
   acceptsActivity,
+  baselineOf,
   classifyTail,
   hostOf,
   projectSlug,
   readTail,
   resolveTranscript,
+  sampleSince,
 } = await import("../skills/relaynote/scripts/lib/activity.mjs");
 const lines = (...entries) => entries.map((e) => JSON.stringify(e));
 // Structural fixtures only: every text, path and id from the real transcripts is a placeholder.
@@ -223,6 +225,89 @@ test("activity is sent only to a server that advertises the capability", () => {
   assert.equal(acceptsActivity({ delivery_protocol: 4 }), false);
   assert.equal(acceptsActivity({ agent_activity: 1 }), false);
   assert.equal(acceptsActivity(null), false);
+});
+
+
+// The window's baseline: only what the AI wrote after the decision was delivered belongs to this
+// turn. Before 4.2.1 the tail at that instant — the PREVIOUS turn's `end_turn` — was classified,
+// so every delivery reported an immediate false `responded`.
+test("only lines appended after the baseline are classified", async () => {
+  const file = path.join(dir, "baseline.jsonl");
+  const write = (...entries) => fs.appendFile(file, lines(...entries).join("\n") + "\n");
+  // The transcript already ends with the previous turn's completion when the window opens.
+  await write(toolResult, assistant("end_turn"));
+  const baseline = await baselineOf(file);
+  assert.ok(baseline.bytes > 0);
+  assert.match(baseline.mtime, /^\d{4}-\d\d-\d\dT/);
+  const opened = await sampleSince("claude-code", file, baseline.bytes);
+  assert.equal(opened.appended, false);
+  assert.equal(opened.result, null, "a pre-baseline end_turn yields no state at all");
+  // The first post-baseline write is the AI starting on the decision.
+  await write(assistant("tool_use"));
+  const first = await sampleSince("claude-code", file, baseline.bytes);
+  assert.equal(first.appended, true);
+  assert.deepEqual(first.result, { state: "working", marker: "tool_use" });
+  // A completion marker written after the baseline is the real one.
+  await write(assistant("end_turn"));
+  assert.deepEqual((await sampleSince("claude-code", file, baseline.bytes)).result, {
+    state: "responded",
+    marker: "end_turn",
+  });
+  // The window stays open, so a further write is `working` again in the same window.
+  await write(toolResult);
+  assert.deepEqual((await sampleSince("claude-code", file, baseline.bytes)).result, {
+    state: "working",
+    marker: "tool_result",
+  });
+});
+
+test("a pre-baseline codex task_complete never reports responded", async () => {
+  const file = path.join(dir, "baseline-codex.jsonl");
+  const write = (...entries) => fs.appendFile(file, lines(...entries).join("\n") + "\n");
+  await write(codexEvent("task_started"), codexEvent("task_complete"));
+  const baseline = await baselineOf(file);
+  assert.equal((await sampleSince("codex", file, baseline.bytes)).result, null);
+  // A `task_complete` that lands after the baseline with no `task_started` of its own is still
+  // the previous turn's trailer: it is a write, so `working`, never `responded`.
+  await write(codexEvent("task_complete"));
+  assert.deepEqual((await sampleSince("codex", file, baseline.bytes)).result, {
+    state: "working",
+  });
+  await write(codexEvent("task_started"));
+  assert.deepEqual((await sampleSince("codex", file, baseline.bytes)).result, {
+    state: "working",
+    marker: "task_started",
+  });
+  await write(codexEvent("task_complete"));
+  assert.deepEqual((await sampleSince("codex", file, baseline.bytes)).result, {
+    state: "responded",
+    marker: "task_complete",
+  });
+});
+
+test("a transcript that shrinks below the baseline is read from the start", async () => {
+  const file = path.join(dir, "baseline-rotate.jsonl");
+  await fs.writeFile(file, lines(assistant("tool_use"), assistant("end_turn")).join("\n") + "\n");
+  const baseline = await baselineOf(file);
+  // Rotation: a fresh, shorter file at the same path.
+  await fs.writeFile(file, lines(assistant("tool_use")).join("\n") + "\n");
+  const read = await sampleSince("claude-code", file, baseline.bytes);
+  assert.equal(read.reset, true);
+  assert.ok(read.size < baseline.bytes);
+  // The caller resets its baseline to 0 and re-reads: everything in the new file is new.
+  const after = await sampleSince("claude-code", file, 0);
+  assert.equal(after.reset, false);
+  assert.deepEqual(after.result, { state: "working", marker: "tool_use" });
+});
+
+test("readTail still reads the whole tail, baseline or not", async () => {
+  const file = path.join(dir, "whole-tail.jsonl");
+  await fs.writeFile(file, lines(assistant("end_turn")).join("\n") + "\n");
+  const tail = await readTail(file);
+  assert.deepEqual(classifyTail("claude-code", tail.lines), {
+    state: "responded",
+    marker: "end_turn",
+  });
 });
 
 test.after(() => fs.rm(dir, { recursive: true, force: true }));

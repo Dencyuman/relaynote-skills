@@ -69,17 +69,35 @@ export async function resolveTranscript(hostId, reg) {
 }
 
 export const TAIL_BYTES = 65536;
-/** Last `bytes` of the transcript as lines; a truncated first line is dropped by the parser. */
-export async function readTail(file, bytes=TAIL_BYTES) {
+/** Byte length and mtime of the transcript right now: the baseline a window is measured against. */
+export async function baselineOf(file) {
+  const stat = await fs.stat(file).catch(()=>null);
+  return {bytes: stat?.size ?? 0, mtime: stat ? stat.mtime.toISOString() : null};
+}
+/**
+ * Everything appended after byte `offset`, capped at the last `bytes` of it; a truncated first
+ * line is dropped by the parser. `appended` is false when the file has not grown past the offset,
+ * and `reset` marks a file that shrank below it (truncation or rotation), whose whole content is
+ * then treated as new.
+ */
+export async function readSince(file, offset=0, bytes=TAIL_BYTES) {
   const handle = await fs.open(file,'r');
   try {
     const stat = await handle.stat();
-    const length = Math.min(stat.size, bytes);
+    const reset = stat.size < offset;
+    const from = reset ? 0 : offset;
+    const length = Math.max(0, Math.min(stat.size-from, bytes));
     const buffer = Buffer.alloc(length);
     if (length) await handle.read(buffer,0,length,stat.size-length);
-    return {lines: buffer.toString('utf8').split('\n'), lastWriteAt: stat.mtime.toISOString()};
+    return {
+      lines: buffer.toString('utf8').split('\n'),
+      lastWriteAt: stat.mtime.toISOString(),
+      size: stat.size, appended: stat.size>from, reset,
+    };
   } finally { await handle.close(); }
 }
+/** Last `bytes` of the transcript as lines. */
+export const readTail = (file, bytes=TAIL_BYTES) => readSince(file, 0, bytes);
 
 const parse = lines => {
   const entries = [];
@@ -109,16 +127,23 @@ function claudeCode(entries) {
   }
   return null;
 }
-/** Codex and Orca: the newest turn event after which nothing else happened. */
-function codex(entries) {
-  for (let i=entries.length-1;i>=0;i--) {
-    const type = entries[i].type==='event_msg' ? entries[i].payload?.type : null;
-    if (type==='task_complete') return {state:'responded',marker:'task_complete'};
-    if (type==='turn_aborted') return {state:'detached',marker:'turn_aborted'};
-    if (type==='error') return {state:'detached',marker:'error'};
-    if (type==='task_started') return {state:'working',marker:'task_started'};
+/**
+ * Codex and Orca: the newest turn event after which nothing else happened. Inside a window
+ * (`appended`) a `task_complete` counts only once a `task_started` has been seen in the same
+ * window: the first one to land can still be the trailer of the turn that was already running.
+ */
+function codex(entries, appended) {
+  let started = false, result = null;
+  for (const entry of entries) {
+    const type = entry.type==='event_msg' ? entry.payload?.type : null;
+    if (type==='task_started') { started = true; result = {state:'working',marker:'task_started'}; }
+    else if (type==='task_complete') {
+      if (!appended || started) result = {state:'responded',marker:'task_complete'};
+    }
+    else if (type==='turn_aborted') result = {state:'detached',marker:'turn_aborted'};
+    else if (type==='error') result = {state:'detached',marker:'error'};
   }
-  return null;
+  return result;
 }
 /** Cursor CLI: the turn ends with a `turn_ended` trailer line. */
 function cursorCli(entries) {
@@ -132,15 +157,30 @@ function cursorCli(entries) {
 }
 const formats = {'claude-code':claudeCode, codex, orca:codex, 'cursor-cli':cursorCli};
 
-/** Pure: last lines of a transcript → this conversation's AI state. */
-export function classifyTail(hostId, tailLines) {
+/**
+ * Pure: transcript lines → this conversation's AI state. `appended` marks the lines as the
+ * post-baseline slice of an open window, where a completion marker is trusted because it cannot
+ * belong to the turn that was already running when the window opened.
+ */
+export function classifyTail(hostId, tailLines, {appended=false}={}) {
   if (descriptor(hostId)?.kind!=='jsonl' || !formats[hostId]) return {state:'untracked'};
   // A write with nothing conclusive in the tail still means the AI is running.
-  return formats[hostId](parse(tailLines)) ?? {state:'working'};
+  return formats[hostId](parse(tailLines), appended) ?? {state:'working'};
+}
+
+/**
+ * The window's whole view of the transcript: read what was appended after the baseline and
+ * classify only that. `result` is null when nothing was appended — the caller must then post no
+ * transcript-derived state at all rather than inventing one from the previous turn's tail.
+ */
+export async function sampleSince(hostId, file, offset=0) {
+  const read = await readSince(file, offset);
+  return {...read, result: read.appended ? classifyTail(hostId, read.lines, {appended:true}) : null};
 }
 
 /** The exact object the server accepts under `activity`. */
-export const activityValue = ({state,source,marker,lastWriteAt,at}) => ({
+export const activityValue = ({state,source,marker,lastWriteAt,baselineAt,at}) => ({
   state, at: at ?? new Date().toISOString(), source,
   ...(marker?{marker:label(marker)}:{}), ...(lastWriteAt?{last_write_at:lastWriteAt}:{}),
+  ...(baselineAt?{baseline_at:baselineAt}:{}),
 });
